@@ -106,13 +106,17 @@ header.brandbar{position:relative;text-align:center}
 .bh b{display:block;font-size:15px;color:var(--text);font-variant-numeric:tabular-nums;letter-spacing:0}
 .bh.today b{color:var(--gold)}
 .bl{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--soft);display:flex;align-items:center}
-.cell{min-height:70px;border-radius:9px;border:1px solid var(--line);background:var(--ink);display:flex;flex-direction:column;gap:3px;padding:4px 3px;cursor:pointer;position:relative;text-align:center}
+.cell{min-height:88px;border-radius:9px;border:1px solid var(--line);background:var(--ink);display:flex;flex-direction:column;align-items:stretch;gap:3px;padding:5px;cursor:pointer;position:relative;text-align:left}
 .cell[aria-pressed="true"]{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset}
 .bar{height:6px;border-radius:3px}
 .bar.t{background:repeating-linear-gradient(135deg,var(--tattoo) 0 3px,#3e3a31 3px 6px)}
 .bar.o{background:var(--gold)} .bar.w{background:var(--warn)}
 .cell .tx{font-size:12px;line-height:1.15;color:var(--gold-hi);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 .cell .tx.m{color:var(--faint)} .cell .tx.n{color:var(--soft)}
+.cell .appt{font-size:9px;line-height:1.2;color:var(--soft);min-width:0;overflow:hidden;font-variant-numeric:tabular-nums}
+.cell .appt span,.cell .appt b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cell .appt b{font-size:10px;font-weight:600;color:var(--text)}
+.cell .more{font-size:9px;line-height:1.1;color:var(--muted)}
 .cell .gd{position:absolute;right:4px;bottom:4px;width:6px;height:6px;border-radius:50%}
 .legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px;font-size:11px;color:var(--muted)}
 .legend span{display:inline-flex;gap:6px;align-items:center}
@@ -1056,7 +1060,7 @@ function b64url(s) { return (typeof Buffer !== 'undefined' ? Buffer.from(s).toSt
 function unb64url(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return typeof Buffer !== 'undefined' ? Buffer.from(s, 'base64').toString() : decodeURIComponent(escape(atob(s))); }
 
 </script>
-<script>var APP_VERSION='0.3.11', APP_BUILT='2026-11-10 04:24 UTC';</script>
+<script>var APP_VERSION='0.3.12', APP_BUILT='2026-11-10 04:34 UTC';</script>
 <script>
 (function(){
 'use strict';
@@ -1237,14 +1241,20 @@ function weekBoard(W){
     h += '<div class="bl">'+esc(A.name)+'</div>';
     days.forEach(function(d){
       var info=d.artists[A.id]; var act=info.windows.filter(isActive); var p=[];
-      var tat=info.events.filter(function(e){return e.type==='tattoo'});
-      if (tat.length){ p.push('<div class="bar t"></div><div class="tx n">'+tShort(localParts(new Date(tat[0].start)).hour)+'–'+tShort(localParts(new Date(tat[tat.length-1].end)).hour + (localParts(new Date(tat[tat.length-1].end)).minute?1:0))+'</div>'); }
+      var dayEvents=info.events.slice().sort(function(x,y){return new Date(x.start)-new Date(y.start)});
+      var tat=dayEvents.filter(function(e){return e.type==='tattoo'});
+      if (tat.length) p.push('<div class="bar t" title="Tattoo bookings"></div>');
+      if (info.verified) dayEvents.slice(0,2).forEach(function(e){
+        var kind=({tattoo:'Tattoo',piercing:'Piercing',consult:'Consult',touchup:'Touch-up'})[e.type]||'Booking';
+        var who=e.client||'Client hidden';
+        p.push('<div class="appt" title="'+esc(clockTime(e.start)+' · '+kind+' · '+who)+'"><span>'+esc(clockTime(e.start)+' · '+kind)+'</span><b>'+esc(who)+'</b></div>');
+      });
+      if (info.verified && dayEvents.length>2) p.push('<div class="more">+'+(dayEvents.length-2)+' more booking'+(dayEvents.length-2>1?'s':'')+'</div>');
       act.forEach(function(w){ p.push('<div class="bar '+(w.status==='open'?'o':'w')+'"></div><div class="tx">'+tShort(w.start)+'–'+tShort(w.end)+'</div>'); });
-      var other = info.totals.piercings + info.totals.consults;
-      if (other) p.push('<div class="tx n">+'+other+' booking'+(other>1?'s':'')+'</div>');
       if (!p.length) p.push('<div class="tx m">'+(info.untracked?'Walk-ins only':info.verified?'—':'?')+'</div>');
       var g = act.find(function(w){return w.google.state==='published'}) ? 'var(--gold)' : act.find(function(w){return ['processing','publishing'].indexOf(w.google.state)>=0}) ? 'var(--warn)' : act.find(function(w){return ['failed','remove_failed','manual_remove'].indexOf(w.google.state)>=0}) ? 'var(--bad)' : '';
-      var lbl = A.name+', '+d.label.short+': '+(tat.length?'tattoo booked, ':'')+(act.length?act.map(function(w){return 'open '+rangeLabel(w.start,w.end)}).join(', '):'closed')+', '+info.events.length+' bookings';
+      var details=info.events.slice(0,3).map(function(e){return clockTime(e.start)+' '+(({tattoo:'tattoo',piercing:'piercing',consult:'consult',touchup:'touch-up'})[e.type]||'booking')+' '+(e.client||'client hidden');});
+      var lbl = A.name+', '+d.label.short+': '+(act.length?act.map(function(w){return 'open '+rangeLabel(w.start,w.end)}).join(', '):'closed')+(details.length?'; '+details.join('; '):'')+(info.events.length>3?'; '+(info.events.length-3)+' more bookings':'');
       h += '<button class="cell" type="button" data-day="'+d.date+'" data-a="'+A.id+'" aria-pressed="'+(d.date===S.date&&A.id===S.artist)+'" aria-label="'+esc(lbl)+'">'+p.join('')+(g?'<span class="gd" style="background:'+g+'"></span>':'')+'</button>';
     });
   });
