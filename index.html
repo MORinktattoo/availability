@@ -374,7 +374,8 @@ function classifyEvent(ev) {
   if (/pierc/.test(s)) return 'piercing';
   if (/consult/.test(s)) return 'consult';
   if (/touch.?up/.test(s)) return 'touchup';
-  return 'tattoo'; // "Fresha Appointment" and anything unknown is protected like a tattoo
+  if (/fresha appointment|tattoo appointment/.test(s) || /partners\.fresha\.com\/appointments\/\d+/.test(ev.description || '')) return 'tattoo';
+  return 'other'; // Keep non-Fresha calendar blocks protected without calling them tattoo clients.
 }
 
 function overlaps(aStart, aEnd, bStart, bEnd) { return aStart < bEnd && bStart < aEnd; }
@@ -460,7 +461,7 @@ function checkWindow(input, ctx) {
   return { ok: errors.length === 0, errors, warnings, notes, start, end, conflicts: conflicts.map(slimEvent), free };
 }
 
-// Fresha's calendar titles look like "Client Name – Consultation With Mor", or just "Fresha Appointment"
+// Fresha's calendar titles may contain a client name and service, or only "Fresha Appointment"
 // when Fresha's sync hides details. Some calendar descriptions include a client name, so use only
 // the explicit first/last-name fields as a fallback. Never expose phone or email details.
 function parseSummary(summary, description = '') {
@@ -1060,7 +1061,7 @@ function b64url(s) { return (typeof Buffer !== 'undefined' ? Buffer.from(s).toSt
 function unb64url(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return typeof Buffer !== 'undefined' ? Buffer.from(s, 'base64').toString() : decodeURIComponent(escape(atob(s))); }
 
 </script>
-<script>var APP_VERSION='0.3.15', APP_BUILT='2026-11-10 04:53 UTC';</script>
+<script>var APP_VERSION='0.3.16', APP_BUILT='2026-11-10 05:14 UTC';</script>
 <script>
 (function(){
 'use strict';
@@ -1228,7 +1229,7 @@ function totalsHtml(info){
   return '<div class="totals">'+o.join('')+'</div>';
 }
 function eventsHtml(evs, wins){
-  var rows = evs.map(function(e){ return { at:e.start, html: '<a class="bk" href="'+esc(e.link||FRESHA_CAL)+'" target="_blank" rel="noopener"><span class="t">'+clockTime(e.start)+'<br>'+clockTime(e.end)+'</span><span><span class="c"><span class="tag '+e.type+'">'+({tattoo:'Tattoo',piercing:'Piercing',consult:'Consult',touchup:'Touch-up'}[e.type])+'</span>'+esc(e.client||'Client hidden by Fresha')+'</span><br><span class="s">'+esc(e.service||'Appointment')+'</span></span><span class="go">Fresha ›</span></a>' }; });
+  var rows = evs.map(function(e){ var other=e.type==='other'; return { at:e.start, html: '<a class="bk" href="'+esc(e.link||FRESHA_CAL)+'" target="_blank" rel="noopener"><span class="t">'+clockTime(e.start)+'<br>'+clockTime(e.end)+'</span><span><span class="c"><span class="tag '+e.type+'">'+({tattoo:'Tattoo',piercing:'Piercing',consult:'Consult',touchup:'Touch-up',other:'Busy'}[e.type])+'</span>'+esc(other?(e.service||'Busy calendar time'):(e.client||'Client hidden by Fresha'))+'</span><br><span class="s">'+esc(other?'Calendar block':(e.service||'Appointment'))+'</span></span><span class="go">'+(other?'Calendar ›':'Fresha ›')+'</span></a>' }; });
   (wins||[]).forEach(function(w){ rows.push({ at: localToUtc(w.date,w.start).toISOString(), html:'<a class="bk" href="#" data-win="'+w.id+'"><span class="t">'+hourLabel(w.start)+'<br>'+hourLabel(w.end)+'</span><span><span class="c"><span class="tag win">Open</span>'+esc(servicesShort(w.services))+'</span><br><span class="s">'+esc(googleLight(w)[1])+'</span></span><span class="go">Manage ›</span></a>' }); });
   rows.sort(function(x,y){ return x.at<y.at?-1:1; });
   return rows.length ? rows.map(function(r){return r.html}).join('') : '<div class="empty">Nothing booked.</div>';
@@ -1245,15 +1246,15 @@ function weekBoard(W){
       var tat=dayEvents.filter(function(e){return e.type==='tattoo'});
       if (tat.length) p.push('<div class="bar t" title="Tattoo bookings"></div>');
       if (info.verified) dayEvents.slice(0,2).forEach(function(e){
-        var kind=({tattoo:'Tattoo',piercing:'Piercing',consult:'Consult',touchup:'Touch-up'})[e.type]||'Booking';
-        var who=e.client||'Client hidden';
+        var kind=({tattoo:'Tattoo',piercing:'Piercing',consult:'Consult',touchup:'Touch-up',other:'Calendar block'})[e.type]||'Booking';
+        var who=e.type==='other'?(e.service||'Busy calendar time'):(e.client||'Client hidden');
         p.push('<div class="appt" title="'+esc(clockTime(e.start)+'–'+clockTime(e.end)+' · '+kind+' · '+who)+'"><span>'+esc(clockTime(e.start)+'–'+clockTime(e.end)+' · '+kind)+'</span><b>'+esc(who)+'</b></div>');
       });
       if (info.verified && dayEvents.length>2) p.push('<div class="more">+'+(dayEvents.length-2)+' more booking'+(dayEvents.length-2>1?'s':'')+'</div>');
       act.forEach(function(w){ p.push('<div class="bar '+(w.status==='open'?'o':'w')+'"></div><div class="tx">'+tShort(w.start)+'–'+tShort(w.end)+'</div>'); });
       if (!p.length) p.push('<div class="tx m">'+(info.untracked?'Walk-ins only':info.verified?'—':'?')+'</div>');
       var g = act.find(function(w){return w.google.state==='published'}) ? 'var(--gold)' : act.find(function(w){return ['processing','publishing'].indexOf(w.google.state)>=0}) ? 'var(--warn)' : act.find(function(w){return ['failed','remove_failed','manual_remove'].indexOf(w.google.state)>=0}) ? 'var(--bad)' : '';
-      var details=info.events.slice(0,3).map(function(e){return clockTime(e.start)+' '+(({tattoo:'tattoo',piercing:'piercing',consult:'consult',touchup:'touch-up'})[e.type]||'booking')+' '+(e.client||'client hidden');});
+      var details=info.events.slice(0,3).map(function(e){return clockTime(e.start)+' '+(({tattoo:'tattoo',piercing:'piercing',consult:'consult',touchup:'touch-up',other:'busy'})[e.type]||'booking')+' '+(e.type==='other'?(e.service||'calendar block'):(e.client||'client hidden'));});
       var lbl = A.name+', '+d.label.short+': '+(act.length?act.map(function(w){return 'open '+rangeLabel(w.start,w.end)}).join(', '):'closed')+(details.length?'; '+details.join('; '):'')+(info.events.length>3?'; '+(info.events.length-3)+' more bookings':'');
       h += '<button class="cell" type="button" data-day="'+d.date+'" data-a="'+A.id+'" aria-pressed="'+(d.date===S.date&&A.id===S.artist)+'" aria-label="'+esc(lbl)+'">'+p.join('')+(g?'<span class="gd" style="background:'+g+'"></span>':'')+'</button>';
     });
