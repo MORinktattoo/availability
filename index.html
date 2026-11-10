@@ -1060,7 +1060,7 @@ function b64url(s) { return (typeof Buffer !== 'undefined' ? Buffer.from(s).toSt
 function unb64url(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return typeof Buffer !== 'undefined' ? Buffer.from(s, 'base64').toString() : decodeURIComponent(escape(atob(s))); }
 
 </script>
-<script>var APP_VERSION='0.3.12', APP_BUILT='2026-11-10 04:34 UTC';</script>
+<script>var APP_VERSION='0.3.13', APP_BUILT='2026-11-10 04:36 UTC';</script>
 <script>
 (function(){
 'use strict';
@@ -1247,7 +1247,7 @@ function weekBoard(W){
       if (info.verified) dayEvents.slice(0,2).forEach(function(e){
         var kind=({tattoo:'Tattoo',piercing:'Piercing',consult:'Consult',touchup:'Touch-up'})[e.type]||'Booking';
         var who=e.client||'Client hidden';
-        p.push('<div class="appt" title="'+esc(clockTime(e.start)+' · '+kind+' · '+who)+'"><span>'+esc(clockTime(e.start)+' · '+kind)+'</span><b>'+esc(who)+'</b></div>');
+        p.push('<div class="appt" title="'+esc(clockTime(e.start)+'–'+clockTime(e.end)+' · '+kind+' · '+who)+'"><span>'+esc(clockTime(e.start)+'–'+clockTime(e.end)+' · '+kind)+'</span><b>'+esc(who)+'</b></div>');
       });
       if (info.verified && dayEvents.length>2) p.push('<div class="more">+'+(dayEvents.length-2)+' more booking'+(dayEvents.length-2>1?'s':'')+'</div>');
       act.forEach(function(w){ p.push('<div class="bar '+(w.status==='open'?'o':'w')+'"></div><div class="tx">'+tShort(w.start)+'–'+tShort(w.end)+'</div>'); });
