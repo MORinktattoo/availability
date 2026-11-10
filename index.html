@@ -263,9 +263,9 @@ const CLOSE_LAG_TEXT = 'at the next hourly check, normally within 10 minutes';
 function validBookingUrl(u) { return typeof u === 'string' && /^https:\/\/(www\.)?fresha\.com\/.+/i.test(u); }
 
 const ARTISTS = {
-  mor: { id: 'mor', name: 'Mor', freshaColumn: 'Piercing', blockName: 'Piercings closed', bufferMin: 30, usualStart: 10, offers: ['piercing', 'consult'], googleAuto: true, bookingUrl: '', calendarId: '', trackCalendar: true },
-  alexia: { id: 'alexia', name: 'Alexia', freshaColumn: 'Alexia Piercing', blockName: 'Alexia piercings closed', bufferMin: 30, usualStart: 12, offers: ['piercing', 'consult'], googleAuto: true, bookingUrl: '', calendarId: '', trackCalendar: true },
-  tal: { id: 'tal', name: 'Tal', freshaColumn: 'Tal', blockName: 'Tal closed', bufferMin: 30, usualStart: 11, offers: ['walkin', 'piercing', 'consult'], googleAuto: true, bookingUrl: '', calendarId: '', trackCalendar: true },
+  mor: { id: 'mor', name: 'Mor', freshaColumn: 'Piercing', blockName: 'Piercings closed', bufferMin: 30, usualStart: 10, offers: ['walkin', 'piercing', 'consult'], googleAuto: true, bookingUrl: '', calendarId: '', trackCalendar: true },
+  alexia: { id: 'alexia', name: 'Alexia', freshaColumn: 'Alexia Piercing', blockName: 'Alexia piercings closed', bufferMin: 30, usualStart: 12, offers: ['walkin', 'piercing'], googleAuto: true, bookingUrl: '', calendarId: '', trackCalendar: true },
+  tal: { id: 'tal', name: 'Tal', freshaColumn: 'Tal', blockName: 'Tal closed', bufferMin: 30, usualStart: 11, offers: ['walkin', 'piercing'], googleAuto: true, bookingUrl: '', calendarId: '', trackCalendar: true },
   jia: { id: 'jia', name: 'Jia', freshaColumn: 'Jia', blockName: 'Jia closed', bufferMin: 30, usualStart: 11, offers: ['walkin'], googleAuto: true, bookingUrl: '', calendarId: '', trackCalendar: false },
 };
 
@@ -1047,7 +1047,7 @@ function b64url(s) { return (typeof Buffer !== 'undefined' ? Buffer.from(s).toSt
 function unb64url(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return typeof Buffer !== 'undefined' ? Buffer.from(s, 'base64').toString() : decodeURIComponent(escape(atob(s))); }
 
 </script>
-<script>var APP_VERSION='0.3.5', APP_BUILT='2026-11-10 02:38 UTC';</script>
+<script>var APP_VERSION='0.3.6', APP_BUILT='2026-11-10 03:33 UTC';</script>
 <script>
 (function(){
 'use strict';
@@ -1233,13 +1233,13 @@ function weekBoard(W){
       act.forEach(function(w){ p.push('<div class="bar '+(w.status==='open'?'o':'w')+'"></div><div class="tx">'+tShort(w.start)+'–'+tShort(w.end)+'</div>'); });
       var other = info.totals.piercings + info.totals.consults;
       if (other) p.push('<div class="tx n">+'+other+' booking'+(other>1?'s':'')+'</div>');
-      if (!p.length) p.push('<div class="tx m">'+(info.untracked?'walk-in':info.verified?'—':'?')+'</div>');
+      if (!p.length) p.push('<div class="tx m">'+(info.untracked?'Walk-ins only':info.verified?'—':'?')+'</div>');
       var g = act.find(function(w){return w.google.state==='published'}) ? 'var(--gold)' : act.find(function(w){return ['processing','publishing'].indexOf(w.google.state)>=0}) ? 'var(--warn)' : act.find(function(w){return ['failed','remove_failed','manual_remove'].indexOf(w.google.state)>=0}) ? 'var(--bad)' : '';
       var lbl = A.name+', '+d.label.short+': '+(tat.length?'tattoo booked, ':'')+(act.length?act.map(function(w){return 'open '+rangeLabel(w.start,w.end)}).join(', '):'closed')+', '+info.events.length+' bookings';
       h += '<button class="cell" type="button" data-day="'+d.date+'" data-a="'+A.id+'" aria-pressed="'+(d.date===S.date&&A.id===S.artist)+'" aria-label="'+esc(lbl)+'">'+p.join('')+(g?'<span class="gd" style="background:'+g+'"></span>':'')+'</button>';
     });
   });
-  return h+'</div><div class="legend"><span><i class="bar t"></i>Tattoo</span><span><i class="bar o"></i>Open</span><span><i class="bar w"></i>Finishing</span><span><svg width="8" height="8" aria-hidden="true"><circle cx="4" cy="4" r="3" fill="var(--gold)"/></svg>On Google</span></div></section>';
+  return h+'</div><div class="legend"><span><i class="bar t"></i>Tattoo booking</span><span><i class="bar o"></i>Open window</span><span><i class="bar w"></i>Finishing</span><span><svg width="8" height="8" aria-hidden="true"><circle cx="4" cy="4" r="3" fill="var(--gold)"/></svg>On Google</span></div><div class="empty calendar-help"><b>Striped bars</b> show tattoo appointments from the artist’s connected calendar; those hours are protected. <b>—</b> means the calendar was checked and no booking was found. <b>Walk-in only</b> means no appointment calendar is used. <b>?</b> means the calendar could not be checked, so confirm in Fresha before opening a window.</div></section>';
 }
 function agendaPanel(W, a){
   var h='<section class="panel"><h2>'+esc(aName(a).toUpperCase())+'’S NEXT 3 DAYS <small>bookings & totals</small></h2>';
@@ -1284,7 +1284,11 @@ function defaultStart(a, date){
   if (date===S.week.today && p.hour>=s) s=Math.min(p.hour+(p.minute?1:0), BUSINESS.close-1);
   return s;
 }
-function defaultServices(a){ var A=artistOf(a); return A.offers.indexOf('walkin')>=0 ? {walkin:true, piercing:false, consult:false} : {walkin:false, piercing:true, consult:true}; }
+function defaultServices(a){
+  var A=artistOf(a);
+  if(a==='mor') return {walkin:false, piercing:true, consult:true};
+  return A.offers.indexOf('walkin')>=0 ? {walkin:true, piercing:false, consult:false} : {walkin:false, piercing:true, consult:true};
+}
 function openOpenSheet(init){
   var a = init.artist || S.artist; var date = init.date || S.week.today;
   O = { artist:a, date:date, start:defaultStart(a,date), end:BUSINESS.close, services:defaultServices(a), walkIns:false, ack:false, preview:null, seq:0 };
@@ -1423,7 +1427,7 @@ function openSettings(){
   h += '<section class="stack"><div class="label">Status</div><div class="panel" style="padding:4px 14px">';
   h += connRow('site','Website (Wix)', LIVE?'ok':'', LIVE?'Running v'+esc(W.server?W.server.version:APP_VERSION)+(I.lastSweep?' · last automatic check '+clockTime(I.lastSweep.at):''):'Not installed yet. This is the preview.', null);
   h += connRow('google','Google Business Profile', I.google.ready?'ok':'work', I.google.ready?(I.google.preview?'Simulated in the preview':'Automatic posts available'):esc(I.google.reason||'Copy and paste for now'), 'google');
-  W.artists.forEach(function(a){ var c=I.calendar[a.id]; h += connRow('cal-'+a.id, a.name+'’s Fresha calendar', c.untracked?'':c.ok?'ok':'bad', c.untracked?'Off · walk-ins only':c.ok?'Reading bookings':'Not connected yet', 'calendar', a.id); });
+  W.artists.forEach(function(a){ var c=I.calendar[a.id]; h += connRow('cal-'+a.id, a.name+'’s booking calendar', c.untracked?'':c.ok?'ok':'bad', c.untracked?'Walk-ins only · no calendar needed':c.ok?'Connected · checks bookings before opening windows':'Not connected · confirm Fresha bookings by hand', c.untracked?null:'calendar', a.id); });
   h += connRow('alert','Booking alerts (ntfy)', '', 'Send a test to the phone', 'alert', 'mor');
   h += '</div></section>';
   h += '<section class="stack"><div class="label">Artists</div>'+W.artists.map(artistForm).join('')+'</section>';
@@ -1451,7 +1455,12 @@ function openSettings(){
   call('getSettings').then(function(r){
     var st=r.settings; var box=$('notifBox'); if(!box) return;
     var hh='<div class="label">Booking alerts</div>';
-    W.artists.forEach(function(a){ st[a.id]=st[a.id]||{piercing:true,consult:true,tattoo:false}; hh += tog(a.id+'.piercing',a.name+': piercings','',st[a.id].piercing)+tog(a.id+'.consult',a.name+': consultations','',st[a.id].consult)+tog(a.id+'.tattoo',a.name+': tattoos','',st[a.id].tattoo); });
+    W.artists.forEach(function(a){
+      st[a.id]=st[a.id]||{piercing:true,consult:true,tattoo:false};
+      if(a.offers.indexOf('piercing')>=0) hh += tog(a.id+'.piercing',a.name+': piercings','',st[a.id].piercing);
+      if(a.offers.indexOf('consult')>=0) hh += tog(a.id+'.consult',a.name+': consultations','',st[a.id].consult);
+      hh += tog(a.id+'.tattoo',a.name+': tattoo bookings','',st[a.id].tattoo);
+    });
     hh += tog('showNames','Show client names in alerts','Off by default. Alerts pass through ntfy’s free public server.',st.showNames)+tog('muted','Pause all alerts','',st.muted)+'<div class="empty">Opening availability never sends an alert. Only a real booking does.</div>';
     box.innerHTML=hh;
     each(box,'[data-tog]',function(b){ b.onclick=function(){ var k=b.dataset.tog.split('.'); if(k.length===1) st[k[0]]=!st[k[0]]; else st[k[0]][k[1]]=!st[k[0]][k[1]]; b.setAttribute('aria-checked', k.length===1?st[k[0]]:st[k[0]][k[1]]); call('saveSettings',{settings:st}).then(function(){ toast('Saved'); }); }; });
@@ -1465,12 +1474,12 @@ function artistForm(a){
   var id=function(k){ return 'f-'+a.id+'-'+k; };
   return '<details class="artist-set"><summary>'+esc(a.name)+' <span class="empty" style="margin-left:8px">'+esc(a.offers.map(function(o){return SERVICE_NAMES[o]}).join(' · '))+'</span></summary><div class="stack">'+
     '<button type="button" class="toggle" role="switch" id="'+id('gauto')+'" data-gauto="1" aria-checked="'+a.googleAuto+'"><span>Automatic Google posts<small>Off = the app gives you the text to post by hand.</small></span><span class="sw"></span></button>'+
-    '<button type="button" class="toggle" role="switch" id="'+id('track')+'" data-gauto="1" aria-checked="'+a.trackCalendar+'"><span>Read '+esc(a.name)+'’s Fresha calendar<small>Protects booked tattoos. Off for walk-ins-only artists.</small></span><span class="sw"></span></button>'+
+    '<button type="button" class="toggle" role="switch" id="'+id('track')+'" data-gauto="1" aria-checked="'+a.trackCalendar+'"><span>Check '+esc(a.name)+'’s Fresha bookings<small>Uses the linked Google Calendar to protect tattoo bookings. It never changes appointments. Turn off only when this artist has no appointments to protect.</small></span><span class="sw"></span></button>'+
     '<div class="field"><label for="'+id('url')+'">Fresha booking link</label><input id="'+id('url')+'" type="url" inputmode="url" placeholder="https://www.fresha.com/…" value="'+esc(a.ownBookingUrl)+'"><small>Used for Google’s Book button. Empty = the shop link'+(a.bookingUrl&&!a.ownBookingUrl?' ('+esc(a.bookingUrl)+')':'')+'.</small></div>'+
     '<div class="field"><label for="'+id('col')+'">Fresha column name</label><input id="'+id('col')+'" type="text" value="'+esc(a.freshaColumn)+'"></div>'+
     '<div class="field"><label for="'+id('blk')+'">Name of the daily “closed” block</label><input id="'+id('blk')+'" type="text" value="'+esc(a.blockName)+'"></div>'+
     '<div class="field"><label for="'+id('start')+'">Usual start time</label><select id="'+id('start')+'">'+opts+'</select></div>'+
-    '<div class="field"><label for="'+id('cal')+'">Fresha calendar ID (from Google Calendar settings)</label><input id="'+id('cal')+'" type="text" placeholder="…@group.calendar.google.com" value="'+esc(a.calendarId)+'"><small>Lets the app read '+esc(a.name)+'’s bookings to protect tattoos.</small></div>'+
+    '<div class="field"><label for="'+id('cal')+'">Google Calendar ID for Fresha sync</label><input id="'+id('cal')+'" type="text" placeholder="name@mortattoo.com or calendar ID" value="'+esc(a.calendarId)+'"><small>Fresha syncs appointments into this Google Calendar. The app reads it to avoid opening a window over tattoo bookings. It does not add, move or cancel Fresha appointments.</small></div>'+
     '<button class="btn gold" type="button" data-save="'+a.id+'">Save '+esc(a.name)+'</button></div></details>';
 }
 
