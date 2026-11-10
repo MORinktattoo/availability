@@ -465,8 +465,9 @@ function parseSummary(summary, description = '') {
   if (m) return { client: m[1].trim(), service: m[2].trim() };
   if (/^fresha appointment$/i.test(s)) {
     const detail = String(description || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(?:div|p|li)>/gi, '\n').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&');
-    const first = detail.match(/(?:^|\n)\s*First name\s*:\s*([^\r\n]+)/i)?.[1]?.trim();
-    const last = detail.match(/(?:^|\n)\s*Last name\s*:\s*([^\r\n]+)/i)?.[1]?.trim();
+    const field = (label) => detail.match(new RegExp(`(?:^|[\\n])\\s*${label}\\s*:\\s*(.*?)(?=\\s*(?:\\n|(?:First name|Last name|Phone|Email|Service)\\s*:|$))`, 'i'))?.[1]?.trim();
+    const first = field('First name');
+    const last = field('Last name');
     const name = [first, last].filter(Boolean).join(' ').trim();
     if (name) return { client: name, service: null };
   }
@@ -1055,7 +1056,7 @@ function b64url(s) { return (typeof Buffer !== 'undefined' ? Buffer.from(s).toSt
 function unb64url(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return typeof Buffer !== 'undefined' ? Buffer.from(s, 'base64').toString() : decodeURIComponent(escape(atob(s))); }
 
 </script>
-<script>var APP_VERSION='0.3.7', APP_BUILT='2026-11-10 03:48 UTC';</script>
+<script>var APP_VERSION='0.3.7', APP_BUILT='2026-11-10 03:49 UTC';</script>
 <script>
 (function(){
 'use strict';
