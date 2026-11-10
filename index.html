@@ -739,7 +739,12 @@ function createService(deps) {
   }
 
   async function removePost(w, reason) {
-    if (w.google.state === 'manual') { w.google.state = 'manual_remove'; hist(w, 'Remember to delete the hand-made Google post'); return w; }
+    if (w.google.state === 'manual_posted') {
+      w.google.state = 'manual_remove';
+      hist(w, 'Delete the hand-made Google post on your profile');
+      return w;
+    }
+    if (w.google.state === 'manual') { w.google.state = 'off'; return w; }
     if (!w.google.postName || !['published', 'processing', 'remove_failed', 'removing', 'failed'].includes(w.google.state)) {
       if (w.google.state === 'waiting_fresha' || w.google.state === 'failed') w.google.state = 'off';
       return w;
@@ -849,8 +854,9 @@ function createService(deps) {
         if (['published', 'processing', 'remove_failed', 'removing'].includes(w.google.state)) {
           await removePost(w, `window ended at ${hourLabel(w.end)}`);
           if (w.google.state === 'removed') report.removed++; else report.failed++;
-        } else if (w.google.state === 'manual_posted') { w.google.state = 'manual_remove'; hist(w, 'Window ended — delete the hand-made Google post'); }
-        else if (['waiting_fresha', 'failed', 'publishing'].includes(w.google.state)) w.google.state = 'off';
+        } else if (['manual', 'manual_posted'].includes(w.google.state)) {
+          await removePost(w, 'window ended');
+        } else if (['waiting_fresha', 'failed', 'publishing'].includes(w.google.state)) w.google.state = 'off';
         if (!w.endedAt) { w.endedAt = n.toISOString(); hist(w, 'Window ended'); }
         settle(w); report.closed++;
         await store.saveWindow(w);
@@ -1470,7 +1476,14 @@ function openWindowSheet(id, keep, given){
     manual_done:['ok','check','Google post removed','You deleted it by hand.'],
     off:['idle','dot','Google post','No post for this window.'] }[gs] || ['idle','dot','Google post',''];
   h += step(G[0],G[1],G[2],G[3],G[4]);
-  h += isActive(w) ? step('idle','clock','Ends at '+hourLabel(w.end), w.status==='awaiting_fresha'?'Once it’s open in Fresha.':'No evening step for you. The app removes the Google post after '+hourLabel(w.end)+', '+CLOSE_LAG_TEXT+'.') : step('ok','check', w.status==='cancelled'?'Cancelled':'Closed', w.fullyBooked?'Fully booked. The Google post came down early.':'Existing appointments were kept.');
+  if (isActive(w) && !w.closedEarlyAt && !w.endedAt) {
+    var endNote = w.status==='awaiting_fresha' ? 'Once it’s open in Fresha.' : '';
+    if (gs==='manual_posted') endNote = 'Remove this post from your Google profile when the window ends.';
+    else if (w.google.postName && ['published','processing'].includes(gs)) endNote = 'The app removes the Google post after '+hourLabel(w.end)+', '+CLOSE_LAG_TEXT+'.';
+    h += step('idle','clock','Ends at '+hourLabel(w.end),endNote);
+  } else if (!isActive(w)) {
+    h += step('ok','check',w.status==='cancelled'?'Cancelled':'Closed',w.fullyBooked?'Fully booked. The Google post came down early.':'Existing appointments were kept.');
+  }
   h += '</div>';
   if (isActive(w)){ var started = new Date() >= localToUtc(w.date,w.start); h += '<button class="btn danger full" type="button" id="closeBtn" data-label="'+(started?'Close the rest now':'Cancel this window')+'">'+(started?'Close the rest now':'Cancel this window')+'</button>'; }
   if (w.history && w.history.length) h += '<details><summary>Activity</summary><div class="hist">'+w.history.slice().reverse().map(function(x){return '<span>'+clockTime(x.at)+' · '+esc(x.text)+'</span>'}).join('')+'</div></details>';
