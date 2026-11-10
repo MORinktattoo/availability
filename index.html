@@ -263,10 +263,10 @@ const CLOSE_LAG_TEXT = 'at the next hourly check, normally within 10 minutes';
 function validBookingUrl(u) { return typeof u === 'string' && /^https:\/\/(www\.)?fresha\.com\/.+/i.test(u); }
 
 const ARTISTS = {
-  mor: { id: 'mor', name: 'Mor', freshaColumn: 'Piercing', blockName: 'Piercings closed', bufferMin: 30, usualStart: 10, offers: ['piercing', 'consult'], googleAuto: true, bookingUrl: '', calendarId: '' },
-  alexia: { id: 'alexia', name: 'Alexia', freshaColumn: 'Alexia Piercing', blockName: 'Alexia piercings closed', bufferMin: 30, usualStart: 12, offers: ['piercing', 'consult'], googleAuto: true, bookingUrl: '', calendarId: '' },
-  tal: { id: 'tal', name: 'Tal', freshaColumn: 'Tal', blockName: 'Tal closed', bufferMin: 30, usualStart: 11, offers: ['walkin', 'piercing', 'consult'], googleAuto: true, bookingUrl: '', calendarId: '' },
-  jia: { id: 'jia', name: 'Jia', freshaColumn: 'Jia', blockName: 'Jia closed', bufferMin: 30, usualStart: 11, offers: ['walkin', 'piercing', 'consult'], googleAuto: true, bookingUrl: '', calendarId: '' },
+  mor: { id: 'mor', name: 'Mor', freshaColumn: 'Piercing', blockName: 'Piercings closed', bufferMin: 30, usualStart: 10, offers: ['piercing', 'consult'], googleAuto: true, bookingUrl: '', calendarId: '', trackCalendar: true },
+  alexia: { id: 'alexia', name: 'Alexia', freshaColumn: 'Alexia Piercing', blockName: 'Alexia piercings closed', bufferMin: 30, usualStart: 12, offers: ['piercing', 'consult'], googleAuto: true, bookingUrl: '', calendarId: '', trackCalendar: true },
+  tal: { id: 'tal', name: 'Tal', freshaColumn: 'Tal', blockName: 'Tal closed', bufferMin: 30, usualStart: 11, offers: ['walkin', 'piercing', 'consult'], googleAuto: true, bookingUrl: '', calendarId: '', trackCalendar: true },
+  jia: { id: 'jia', name: 'Jia', freshaColumn: 'Jia', blockName: 'Jia closed', bufferMin: 30, usualStart: 11, offers: ['walkin'], googleAuto: true, bookingUrl: '', calendarId: '', trackCalendar: false },
 };
 
 const SERVICE_NAMES = { walkin: 'Walk-in tattoos', piercing: 'Piercings', consult: 'Consultations' };
@@ -283,6 +283,7 @@ function cleanArtistConfig(input) {
     if (typeof c.blockName === 'string' && c.blockName.trim()) o.blockName = c.blockName.trim().slice(0, 60);
     if (Number.isInteger(c.usualStart) && c.usualStart >= BUSINESS.open && c.usualStart < BUSINESS.close) o.usualStart = c.usualStart;
     if (typeof c.googleAuto === 'boolean') o.googleAuto = c.googleAuto;
+    if (typeof c.trackCalendar === 'boolean') o.trackCalendar = c.trackCalendar;
     if (typeof c.calendarId === 'string') o.calendarId = /^[A-Za-z0-9._%+\-#]+@[A-Za-z0-9.\-]+$/.test(c.calendarId.trim()) ? c.calendarId.trim() : '';
     out[a] = o;
   }
@@ -578,6 +579,7 @@ function createService(deps) {
   }
 
   async function events(artist, date) {
+    if (ARTISTS[artist] && ARTISTS[artist].trackCalendar === false) return { verified: true, events: [], untracked: true };
     try {
       const r = await calendar.listEvents(artist, date, addDays(date, 1), ARTISTS[artist].calendarId);
       return { verified: true, events: r };
@@ -845,6 +847,7 @@ function createService(deps) {
 
   // Called by the Google Calendar push webhook (and hourly as a backstop).
   async function checkNewBookings(artist) {
+    if (ARTISTS[artist] && ARTISTS[artist].trackCalendar === false) return { ok: true, sent: 0 };
     const from = today(); const to = addDays(from, 30);
     let evs;
     try { evs = await calendar.listEvents(artist, from, to, ARTISTS[artist].calendarId); } catch (e) { await log('warn', 'booking check failed', { artist, error: String(e.message || e) }); return { ok: false }; }
@@ -889,6 +892,7 @@ function createService(deps) {
     const windows = await store.listWindows({ from, to });
     const cal = {};
     for (const a of Object.keys(ARTISTS)) {
+      if (ARTISTS[a].trackCalendar === false) { cal[a] = { verified: true, events: [], untracked: true }; continue; }
       try { cal[a] = { verified: true, events: await calendar.listEvents(a, from, to, ARTISTS[a].calendarId) }; }
       catch (e) { cal[a] = { verified: false, events: [], error: String(e.message || e) }; }
     }
@@ -906,6 +910,7 @@ function createService(deps) {
         const freeH = freeHours(date, BUSINESS.open, BUSINESS.close, cal[a].events, ARTISTS[a].bufferMin).length;
         const count = (t) => evs.filter((e) => e.type === t).length;
         artists[a] = {
+          untracked: !!cal[a].untracked,
           totals: { bookedMin, freeHours: freeH, tattoos: count('tattoo'), piercings: count('piercing'), consults: count('consult'), other: count('touchup') },
           verified: cal[a].verified,
           events: evs,
@@ -933,7 +938,7 @@ function createService(deps) {
     if (sweepError) attention.push({ text: 'Automatic closing check failed just now. It will try again within the hour.', kind: 'sweep' });
     return {
       now: now().toISOString(), today: today(), days, attention,
-      integrations: { google: await google.status(), calendar: Object.fromEntries(Object.entries(cal).map(([k, v]) => [k, { ok: v.verified, error: v.error || null }])), lastSweep: await store.getMeta('lastSweep') },
+      integrations: { google: await google.status(), calendar: Object.fromEntries(Object.entries(cal).map(([k, v]) => [k, { ok: v.verified, untracked: !!v.untracked, error: v.error || null }])), lastSweep: await store.getMeta('lastSweep') },
       config: { bookingUrl: config.bookingUrl, business: BUSINESS },
       artists: publicArtists(),
     };
@@ -942,7 +947,7 @@ function createService(deps) {
   function publicArtists() {
     return Object.keys(ARTISTS).map((a) => {
       const A = ARTISTS[a];
-      return { id: a, name: A.name, offers: A.offers, usualStart: A.usualStart, freshaColumn: A.freshaColumn, blockName: A.blockName, googleAuto: A.googleAuto !== false, bookingUrl: bookingUrlFor(a), ownBookingUrl: A.bookingUrl || '', calendarId: A.calendarId || '' };
+      return { id: a, name: A.name, offers: A.offers, usualStart: A.usualStart, freshaColumn: A.freshaColumn, blockName: A.blockName, googleAuto: A.googleAuto !== false, trackCalendar: A.trackCalendar !== false, bookingUrl: bookingUrlFor(a), ownBookingUrl: A.bookingUrl || '', calendarId: A.calendarId || '' };
     });
   }
 
@@ -963,6 +968,7 @@ function createService(deps) {
     try {
       if (what === 'calendar') {
         if (!ARTISTS[artist]) throw httpErr(400, 'Unknown artist');
+        if (ARTISTS[artist].trackCalendar === false) return { ok: true, at, text: `Not reading a Fresha calendar for ${ARTISTS[artist].name} (walk-ins only). Turn it on in ${ARTISTS[artist].name}'s settings if needed.` };
         const evs = await calendar.listEvents(artist, today(), addDays(today(), 7), ARTISTS[artist].calendarId);
         const named = evs.filter((e) => parseSummary(e.summary).client).length;
         return { ok: true, at, text: `Read ${evs.length} booking${evs.length === 1 ? '' : 's'} for the next 7 days` + (evs.length && named < evs.length ? `. ${evs.length - named} show no client name; Fresha's calendar sync may be hiding details` : '') + '.' };
@@ -1041,7 +1047,7 @@ function b64url(s) { return (typeof Buffer !== 'undefined' ? Buffer.from(s).toSt
 function unb64url(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return typeof Buffer !== 'undefined' ? Buffer.from(s, 'base64').toString() : decodeURIComponent(escape(atob(s))); }
 
 </script>
-<script>var APP_VERSION='0.3.4', APP_BUILT='2026-11-10 02:31 UTC';</script>
+<script>var APP_VERSION='0.3.5', APP_BUILT='2026-11-10 02:38 UTC';</script>
 <script>
 (function(){
 'use strict';
@@ -1193,6 +1199,7 @@ function nowHourIfToday(date){ var p=localParts(new Date()); return p.dateKey===
 function bookingsPanel(d, a){
   var info=d.artists[a]; var dl=dateLabel(d.date, S.week.today);
   var h='<section class="panel"><h2>BOOKINGS <small>'+esc(aName(a))+' · '+esc(dl.rel==='Today'?'Today':dl.short)+'</small></h2>';
+  if (info.untracked) return h+'<div class="empty">Walk-ins only. No Fresha calendar is read for '+esc(aName(a))+'.</div>'+eventsHtml([], info.windows.filter(isActive))+'</section>';
   if (!info.verified) return h+'<div class="check warn">'+ico('alert')+'<span>'+esc(aName(a))+'’s Fresha calendar can’t be read, so bookings aren’t shown or checked.</span></div></section>';
   h += totalsHtml(info);
   h += eventsHtml(info.events, info.windows.filter(isActive));
@@ -1226,7 +1233,7 @@ function weekBoard(W){
       act.forEach(function(w){ p.push('<div class="bar '+(w.status==='open'?'o':'w')+'"></div><div class="tx">'+tShort(w.start)+'–'+tShort(w.end)+'</div>'); });
       var other = info.totals.piercings + info.totals.consults;
       if (other) p.push('<div class="tx n">+'+other+' booking'+(other>1?'s':'')+'</div>');
-      if (!p.length) p.push('<div class="tx m">'+(info.verified?'—':'?')+'</div>');
+      if (!p.length) p.push('<div class="tx m">'+(info.untracked?'walk-in':info.verified?'—':'?')+'</div>');
       var g = act.find(function(w){return w.google.state==='published'}) ? 'var(--gold)' : act.find(function(w){return ['processing','publishing'].indexOf(w.google.state)>=0}) ? 'var(--warn)' : act.find(function(w){return ['failed','remove_failed','manual_remove'].indexOf(w.google.state)>=0}) ? 'var(--bad)' : '';
       var lbl = A.name+', '+d.label.short+': '+(tat.length?'tattoo booked, ':'')+(act.length?act.map(function(w){return 'open '+rangeLabel(w.start,w.end)}).join(', '):'closed')+', '+info.events.length+' bookings';
       h += '<button class="cell" type="button" data-day="'+d.date+'" data-a="'+A.id+'" aria-pressed="'+(d.date===S.date&&A.id===S.artist)+'" aria-label="'+esc(lbl)+'">'+p.join('')+(g?'<span class="gd" style="background:'+g+'"></span>':'')+'</button>';
@@ -1416,7 +1423,7 @@ function openSettings(){
   h += '<section class="stack"><div class="label">Status</div><div class="panel" style="padding:4px 14px">';
   h += connRow('site','Website (Wix)', LIVE?'ok':'', LIVE?'Running v'+esc(W.server?W.server.version:APP_VERSION)+(I.lastSweep?' · last automatic check '+clockTime(I.lastSweep.at):''):'Not installed yet. This is the preview.', null);
   h += connRow('google','Google Business Profile', I.google.ready?'ok':'work', I.google.ready?(I.google.preview?'Simulated in the preview':'Automatic posts available'):esc(I.google.reason||'Copy and paste for now'), 'google');
-  W.artists.forEach(function(a){ var c=I.calendar[a.id]; h += connRow('cal-'+a.id, a.name+'’s Fresha calendar', c.ok?'ok':'bad', c.ok?'Reading bookings':'Not connected yet', 'calendar', a.id); });
+  W.artists.forEach(function(a){ var c=I.calendar[a.id]; h += connRow('cal-'+a.id, a.name+'’s Fresha calendar', c.untracked?'':c.ok?'ok':'bad', c.untracked?'Off · walk-ins only':c.ok?'Reading bookings':'Not connected yet', 'calendar', a.id); });
   h += connRow('alert','Booking alerts (ntfy)', '', 'Send a test to the phone', 'alert', 'mor');
   h += '</div></section>';
   h += '<section class="stack"><div class="label">Artists</div>'+W.artists.map(artistForm).join('')+'</section>';
@@ -1431,7 +1438,7 @@ function openSettings(){
     call('testConnection',{what:b.dataset.test, artist:b.dataset.artist}).then(function(r){ out.textContent=r.text; var dot=$('d-'+b.dataset.key); if(dot) dot.className=r.ok?'ok':'bad'; b.disabled=false; }).catch(function(){ out.textContent='Couldn’t run the test.'; b.disabled=false; });
   }; });
   each(root,'[data-save]',function(b){ b.onclick=function(){
-    var a=b.dataset.save, f=function(k){ return $('f-'+a+'-'+k); }; var cfg={}; cfg[a]={ bookingUrl:f('url').value, freshaColumn:f('col').value, blockName:f('blk').value, usualStart:+f('start').value, calendarId:f('cal').value, googleAuto:f('gauto').getAttribute('aria-checked')==='true' };
+    var a=b.dataset.save, f=function(k){ return $('f-'+a+'-'+k); }; var cfg={}; cfg[a]={ bookingUrl:f('url').value, freshaColumn:f('col').value, blockName:f('blk').value, usualStart:+f('start').value, calendarId:f('cal').value, googleAuto:f('gauto').getAttribute('aria-checked')==='true', trackCalendar:f('track').getAttribute('aria-checked')==='true' };
     var url=cfg[a].bookingUrl.trim(); if(url && !validBookingUrl(url)){ toast('That link must start with https://www.fresha.com/'); return; }
     b.disabled=true; call('saveArtistConfig',{artistConfig:cfg}).then(function(){ toast('Saved '+aName(a)); b.disabled=false; load(); }).catch(function(){ b.disabled=false; });
   }; });
@@ -1458,6 +1465,7 @@ function artistForm(a){
   var id=function(k){ return 'f-'+a.id+'-'+k; };
   return '<details class="artist-set"><summary>'+esc(a.name)+' <span class="empty" style="margin-left:8px">'+esc(a.offers.map(function(o){return SERVICE_NAMES[o]}).join(' · '))+'</span></summary><div class="stack">'+
     '<button type="button" class="toggle" role="switch" id="'+id('gauto')+'" data-gauto="1" aria-checked="'+a.googleAuto+'"><span>Automatic Google posts<small>Off = the app gives you the text to post by hand.</small></span><span class="sw"></span></button>'+
+    '<button type="button" class="toggle" role="switch" id="'+id('track')+'" data-gauto="1" aria-checked="'+a.trackCalendar+'"><span>Read '+esc(a.name)+'’s Fresha calendar<small>Protects booked tattoos. Off for walk-ins-only artists.</small></span><span class="sw"></span></button>'+
     '<div class="field"><label for="'+id('url')+'">Fresha booking link</label><input id="'+id('url')+'" type="url" inputmode="url" placeholder="https://www.fresha.com/…" value="'+esc(a.ownBookingUrl)+'"><small>Used for Google’s Book button. Empty = the shop link'+(a.bookingUrl&&!a.ownBookingUrl?' ('+esc(a.bookingUrl)+')':'')+'.</small></div>'+
     '<div class="field"><label for="'+id('col')+'">Fresha column name</label><input id="'+id('col')+'" type="text" value="'+esc(a.freshaColumn)+'"></div>'+
     '<div class="field"><label for="'+id('blk')+'">Name of the daily “closed” block</label><input id="'+id('blk')+'" type="text" value="'+esc(a.blockName)+'"></div>'+
