@@ -1060,7 +1060,7 @@ function b64url(s) { return (typeof Buffer !== 'undefined' ? Buffer.from(s).toSt
 function unb64url(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return typeof Buffer !== 'undefined' ? Buffer.from(s, 'base64').toString() : decodeURIComponent(escape(atob(s))); }
 
 </script>
-<script>var APP_VERSION='0.3.13', APP_BUILT='2026-11-10 04:36 UTC';</script>
+<script>var APP_VERSION='0.3.14', APP_BUILT='2026-11-10 04:53 UTC';</script>
 <script>
 (function(){
 'use strict';
