@@ -189,6 +189,10 @@ footer{font-size:11px;color:var(--faint);letter-spacing:.12em;text-transform:upp
 .summary .big{font-family:var(--display);font-size:22px;font-weight:700;letter-spacing:.06em;color:var(--gold-hi);font-variant-numeric:tabular-nums}
 .summary .sm{color:var(--soft);font-size:13px}
 .post{white-space:pre-wrap;font-size:14px;line-height:1.55;background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:12px;color:var(--text);user-select:all;-webkit-user-select:all}
+.post-photos{display:flex;flex-wrap:wrap;gap:12px;margin:12px 0}
+.post-photos figure{margin:0;width:min(136px,100%)}
+.post-photos img{display:block;width:100%;height:108px;object-fit:contain;background:var(--ink);border-radius:8px}
+.post-photos figcaption{margin-top:6px;font-size:12px;color:var(--muted)}
 details summary{cursor:pointer;color:var(--soft);font-size:14px;min-height:36px;display:flex;align-items:center}
 .steps{display:flex;flex-direction:column}
 .step{display:grid;grid-template-columns:30px minmax(0,1fr);gap:12px;padding-bottom:18px;position:relative}
@@ -516,6 +520,21 @@ function freshaCloseSteps(w, fromHour) {
 }
 
 // ---------- Google announcement ----------
+const GOOGLE_POST_PHOTOS = {
+  tal: 'https://static.wixstatic.com/media/6e3346_df341738116243af8d45c87ee1cbd03a~mv2.jpg',
+  alexia: 'https://static.wixstatic.com/media/6e3346_fbb8edb1712a4d18b8d6a75d49e4bbc8~mv2.png/v1/fit/w_1400,h_1400,q_90/6e3346_fbb8edb1712a4d18b8d6a75d49e4bbc8~mv2.png',
+};
+
+const PIERCING_POST_PHOTO = 'https://static.wixstatic.com/media/6e3346_99703c8f6c38433d89df2fb4148a05d9~mv2.jpg';
+
+function googlePostMedia(w) {
+  const urls = [];
+  if (w.services.piercing) urls.push(PIERCING_POST_PHOTO);
+  const portfolio = GOOGLE_POST_PHOTOS[w.artist];
+  if (portfolio && (w.services.walkin || w.services.consult)) urls.push(portfolio);
+  return urls.map((sourceUrl) => ({ mediaFormat: 'PHOTO', sourceUrl }));
+}
+
 function servicesLabel(sv) {
   const appt = sv.piercing && sv.consult ? 'piercing and consultation appointments' : sv.consult ? 'consultation appointments' : sv.piercing ? 'piercing appointments' : '';
   const t = sv.walkin ? (appt ? 'Walk-in tattoos and ' + appt : 'Walk-in tattoos') : appt.charAt(0).toUpperCase() + appt.slice(1);
@@ -544,10 +563,12 @@ function buildPost(w, opts) {
     : 'Appointments only. Book online to check availability.');
   const short = servicesShort(w.services);
   const [y, m, dd] = w.date.split('-').map(Number);
+  const media = googlePostMedia(w);
   return {
     languageCode: 'en-US',
     topicType: 'EVENT',
     summary: lines.join('\n'),
+    ...(media.length ? { media } : {}),
     event: {
       title: `${short} with ${A.name} · ${rangeLabel(w.start, w.end)}`.slice(0, 58),
       schedule: {
@@ -629,7 +650,7 @@ function createService(deps) {
         closesAt: p.closesAt, createdAt: now().toISOString(), status: 'awaiting_fresha',
         protection: { verified: !p.check.warnings.length, checkedAt: now().toISOString(), notes: p.check.notes },
         fresha: { state: p.fresha.length ? 'waiting' : 'not_needed', steps: p.fresha },
-        google: { state: 'waiting_fresha', postName: null, attempts: 0, error: null, publishedAt: null, verifiedAt: null, removedAt: null, text: p.post.summary },
+        google: { state: 'waiting_fresha', postName: null, attempts: 0, error: null, publishedAt: null, verifiedAt: null, removedAt: null, text: p.post.summary, media: p.post.media || [] },
         history: [{ at: now().toISOString(), text: 'Window selected; schedule checked' }],
       };
       if (w.fresha.state === 'not_needed') { w.status = 'open'; hist(w, 'Walk-ins only, so nothing to change in Fresha'); }
@@ -671,7 +692,7 @@ function createService(deps) {
       await store.saveWindow(w); return w;
     }
     const body = buildPost(w, { todayKey: today(), bookingUrl: bookingUrlFor(w.artist) });
-    w.google = { ...w.google, state: 'publishing', attempts: (w.google.attempts || 0) + 1, startedAt: now().toISOString(), error: null, text: body.summary };
+    w.google = { ...w.google, state: 'publishing', attempts: (w.google.attempts || 0) + 1, startedAt: now().toISOString(), error: null, text: body.summary, media: body.media || [] };
     await store.saveWindow(w);
     try {
       // Never blindly duplicate: if an earlier attempt may have gone through, look first.
@@ -791,7 +812,7 @@ function createService(deps) {
   async function retry({ windowId, requestId }) {
     return idem(requestId, async () => {
       const w = await mustGet(windowId);
-      if (w.google.state === 'failed' && now() < new Date(w.closesAt) && w.fresha.state === 'applied') await publish(w);
+      if (['failed', 'manual'].includes(w.google.state) && w.status === 'open' && !w.closedEarlyAt && now() < new Date(w.closesAt) && ['applied', 'not_needed'].includes(w.fresha.state)) await publish(w);
       else if (w.google.state === 'processing' && isActive(w) && now() < new Date(w.closesAt) && !w.closedEarlyAt) await checkProcessing(w);
       else if (['remove_failed', 'published', 'processing', 'removing'].includes(w.google.state) && (!isActive(w) || w.status === 'attention' || now() >= new Date(w.closesAt) || w.closedEarlyAt)) await removePost(w, 'retry');
       settle(w); await store.saveWindow(w);
@@ -1061,7 +1082,7 @@ function b64url(s) { return (typeof Buffer !== 'undefined' ? Buffer.from(s).toSt
 function unb64url(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return typeof Buffer !== 'undefined' ? Buffer.from(s, 'base64').toString() : decodeURIComponent(escape(atob(s))); }
 
 </script>
-<script>var APP_VERSION='0.3.17', APP_BUILT='2026-11-10 05:18 UTC';</script>
+<script>var APP_VERSION='0.3.18', APP_BUILT='2026-11-10 13:54 UTC';</script>
 <script>
 (function(){
 'use strict';
@@ -1075,6 +1096,37 @@ var ico = function(id){return '<svg aria-hidden="true"><use href="#i-'+id+'"/></
 var rid = function(){ try{ return crypto.randomUUID(); }catch(e){ return 'r'+Date.now().toString(36)+Math.random().toString(36).slice(2); } };
 function store(k,v){ try{ if(v===undefined) return JSON.parse(localStorage.getItem('mi:'+k)); localStorage.setItem('mi:'+k, JSON.stringify(v)); }catch(e){ return null; } }
 var each = function(root, sel, fn){ Array.prototype.forEach.call(root.querySelectorAll(sel), fn); };
+
+function postPhotos(media, artist, canDownload){
+  var photos = (media || []).filter(function(item){
+    return item.mediaFormat === 'PHOTO' && /^https:\/\/static\.wixstatic\.com\/media\//.test(item.sourceUrl);
+  });
+  if(!photos.length) return '';
+  return '<div class="post-photos">'+photos.map(function(item){
+    var piercing = item.sourceUrl === PIERCING_POST_PHOTO;
+    var label = piercing ? 'Piercing photo' : aName(artist)+'’s portfolio';
+    var url = esc(item.sourceUrl);
+    var name = piercing ? 'mor-ink-piercing.jpg' : 'mor-ink-'+artist+(item.sourceUrl.split('/')[4].endsWith('.png') ? '.png' : '.jpg');
+    return '<figure><a href="'+url+'" target="_blank" rel="noopener"><img src="'+url+'" alt="'+esc(label)+'"></a><figcaption>'+esc(label)+'</figcaption>'+
+      (canDownload?'<button class="btn sm" type="button" data-photo="'+url+'" data-filename="'+esc(name)+'">Download photo</button>':'')+'</figure>';
+  }).join('')+'</div>';
+}
+function downloadPostPhoto(button){
+  button.disabled = true;
+  fetch(button.dataset.photo, {credentials:'omit'}).then(function(response){
+    if(!response.ok || !/^image\//.test(response.headers.get('content-type') || '')) throw new Error('Photo unavailable');
+    return response.blob();
+  }).then(function(blob){
+    var url = URL.createObjectURL(blob), link = document.createElement('a');
+    link.href = url;
+    link.download = button.dataset.filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 30000);
+  }).catch(function(){ toast('Photo download failed. Tap the image to open it.'); })
+    .finally(function(){ button.disabled = false; });
+}
 
 /* ---------------- backend: live (Wix) or preview (in-page sample data) ---------------- */
 var api;
@@ -1361,7 +1413,7 @@ function drawCheck(){
     c.notes.forEach(function(n){ h += '<div class="check warn">'+ico('clock')+'<span>'+esc(n)+'</span></div>'; });
     var dl=dateLabel(O.date,S.week.today); var needF = O.services.piercing||O.services.consult;
     h += '<div class="summary"><span class="sm">'+esc(aName(O.artist))+' · '+esc(dl.rel==='Today'||dl.rel==='Tomorrow'?dl.rel+', '+dl.short:dl.short)+' · '+esc(servicesShort(O.services))+'</span><span class="big">'+rangeLabel(c.start,c.end)+'</span><span class="sm">'+(needF?'Next: a 30-second change in Fresha. ':'Walk-ins only, so nothing to change in Fresha. ')+'Ends at '+hourLabel(c.end)+'; the app takes the Google post down '+CLOSE_LAG_TEXT+'.</span></div>';
-    h += '<details><summary>Google post that will go up</summary><div class="post">'+esc(p.post.summary)+'</div></details>';
+    h += '<details><summary>Google post preview</summary><div class="post">'+esc(p.post.summary)+'</div>'+postPhotos(p.post.media || googlePostMedia(input()), O.artist, false)+'</details>';
     h += '<button class="btn gold full" type="button" id="doOpen"'+(c.warnings.length && !O.ack?' disabled':'')+'>Open '+rangeLabel(c.start,c.end)+'</button>';
   }
   box.innerHTML=h;
@@ -1398,12 +1450,18 @@ function openWindowSheet(id, keep, given){
   else if (fs==='not_needed') h += step('ok','check','Nothing to do in Fresha','Walk-ins only. Add each walk-in to Fresha when they arrive.');
   else h += step('idle','dot','Fresha','Never opened in Fresha, so nothing to close.');
   var gs=w.google.state;
+  var media=w.google.media || googlePostMedia(w);
+  var manualPhotos=postPhotos(media,w.artist,true);
+  var manualInstructions=manualPhotos ? 'Copy the text and download the photos below. On your profile, tap Add update, paste the text, add the photos and button, then post.' : 'Copy the text, then on your profile tap Add update, paste, add the button, and post.';
+  var manualReason=w.google.error||'Automatic posting isn’t on';
+  var integration=S.week.integrations && S.week.integrations.google;
+  if(integration && !integration.ready && manualReason==='Waiting for Google API approval') manualReason=integration.reason||manualReason;
   var G = { waiting_fresha:['idle','dot','Google post','Goes up after you tap Done in Fresha, so Google never advertises times that aren’t bookable.'],
     publishing:['work spin','spin','Sending to Google…',''],
     processing:['work','clock','Google is processing the post','Google accepted it but hasn’t shown it yet. The app checks again every hour and when you open it. It isn’t live until this says so.','<div class="row"><button class="btn" type="button" data-act="retry">Check now</button></div>'],
-    published:['ok','check','Live on Google','Google reported it live at '+(w.google.publishedAt?clockTime(w.google.publishedAt):'—')+'. The app removes it after '+hourLabel(w.end)+', '+CLOSE_LAG_TEXT+'.','<details><summary>Post text</summary><div class="post">'+esc(w.google.text||'')+'</div></details>'],
-    failed:['bad','alert','Google post didn’t go up',esc(w.google.error||'')+'. Your Fresha window is unaffected.','<div class="row"><button class="btn gold" type="button" data-act="retry">Try again</button><button class="btn" type="button" data-act="copy">Copy text instead</button></div>'],
-    manual:['work','mega','Post it on Google',esc(w.google.error||'Automatic posting isn’t on')+'. Copy this, then on your profile tap Add update, paste, add the button, and post.','<div class="post" id="postText">'+esc(w.google.text||'')+'</div><div class="row"><button class="btn gold" type="button" data-act="copy">Copy text</button><a class="btn" href="'+GOOGLE_PROFILE+'" target="_blank" rel="noopener">Open profile</a></div><div class="row"><button class="btn ghost" type="button" data-act="posted">I posted it</button></div>'],
+    published:['ok','check','Live on Google','Google reported it live at '+(w.google.publishedAt?clockTime(w.google.publishedAt):'—')+'. The app removes it after '+hourLabel(w.end)+', '+CLOSE_LAG_TEXT+'.','<details><summary>Post text and photos</summary><div class="post">'+esc(w.google.text||'')+'</div>'+postPhotos(w.google.media,w.artist,false)+'</details>'],
+    failed:['bad','alert','Google post didn’t go up',esc(w.google.error||'')+'. Your Fresha window is unaffected.',manualPhotos+'<div class="row"><button class="btn gold" type="button" data-act="retry">Try again</button><button class="btn" type="button" data-act="copy">Copy text instead</button></div>'],
+    manual:['work','mega','Post it on Google',esc(manualReason)+'. '+manualInstructions,'<div class="post" id="postText">'+esc(w.google.text||'')+'</div>'+manualPhotos+(integration&&integration.ready?'<div class="row"><button class="btn gold" type="button" data-act="retry">Publish through Google</button></div>':'')+'<div class="row"><button class="btn gold" type="button" data-act="copy">Copy text</button><a class="btn" href="'+GOOGLE_PROFILE+'" target="_blank" rel="noopener">Open profile</a></div><div class="row"><button class="btn ghost" type="button" data-act="posted">I posted it</button></div>'],
     manual_posted:['ok','check','Posted by hand','When the window ends, the app reminds you to delete it.'],
     removing:['work spin','spin','Removing from Google…',''],
     removed:['ok','check','Removed from Google','Gone at '+(w.google.removedAt?clockTime(w.google.removedAt):'—')+' and checked.'],
@@ -1418,6 +1476,7 @@ function openWindowSheet(id, keep, given){
   if (w.history && w.history.length) h += '<details><summary>Activity</summary><div class="hist">'+w.history.slice().reverse().map(function(x){return '<span>'+clockTime(x.at)+' · '+esc(x.text)+'</span>'}).join('')+'</div></details>';
   showSheet(h, {type:'window', id:w.id}); $('sheet').scrollTop = top;
   each($('sheetIn'),'[data-act]',function(b){ b.onclick=function(){ act(b.dataset.act, w, b); }; });
+  each($('sheetIn'),'[data-photo]',function(b){ b.onclick=function(){ downloadPostPhoto(b); }; });
   var cb=$('closeBtn'); if(cb) cb.onclick=function(){
     if(!cb.classList.contains('armed')){ cb.classList.add('armed'); cb.textContent='Tap again to confirm'; setTimeout(function(){ if(cb.isConnected){ cb.classList.remove('armed'); cb.textContent=cb.dataset.label; } }, 4000); return; }
     cb.disabled=true; cb.textContent='Closing…';
