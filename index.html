@@ -875,7 +875,7 @@ function createService(deps) {
       if (!want) continue;
       const lp = localParts(new Date(ev.start));
       const kind = type === 'tattoo' && inWindow ? 'Booking in your piercing window' : type === 'piercing' ? 'Piercing' : type === 'consult' ? 'Consultation' : 'Tattoo';
-      const client = settings.showNames ? parseSummary(ev.summary).client : null;
+      const client = settings.showNames ? parseSummary(ev.summary, ev.description).client : null;
       await safeNotify({
         artist,
         title: `New booking · ${ARTISTS[artist].name}`,
@@ -978,7 +978,7 @@ function createService(deps) {
         if (!ARTISTS[artist]) throw httpErr(400, 'Unknown artist');
         if (ARTISTS[artist].trackCalendar === false) return { ok: true, at, text: `Not reading a Fresha calendar for ${ARTISTS[artist].name} (walk-ins only). Turn it on in ${ARTISTS[artist].name}'s settings if needed.` };
         const evs = await calendar.listEvents(artist, today(), addDays(today(), 7), ARTISTS[artist].calendarId);
-        const named = evs.filter((e) => parseSummary(e.summary).client).length;
+        const named = evs.filter((e) => parseSummary(e.summary, e.description).client).length;
         return { ok: true, at, text: `Read ${evs.length} booking${evs.length === 1 ? '' : 's'} for the next 7 days` + (evs.length && named < evs.length ? `. ${evs.length - named} show no client name; Fresha's calendar sync may be hiding details` : '') + '.' };
       }
       if (what === 'google') {
@@ -1055,7 +1055,7 @@ function b64url(s) { return (typeof Buffer !== 'undefined' ? Buffer.from(s).toSt
 function unb64url(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return typeof Buffer !== 'undefined' ? Buffer.from(s, 'base64').toString() : decodeURIComponent(escape(atob(s))); }
 
 </script>
-<script>var APP_VERSION='0.3.7', APP_BUILT='2026-11-10 03:45 UTC';</script>
+<script>var APP_VERSION='0.3.7', APP_BUILT='2026-11-10 03:48 UTC';</script>
 <script>
 (function(){
 'use strict';
