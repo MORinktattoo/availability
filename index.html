@@ -1517,6 +1517,7 @@ function openSettings(){
   h += '<section class="stack"><div class="label">Close all future availability</div><div class="empty">Stops every open and upcoming window for that artist. Booked clients keep their appointments.</div><div class="row">'+W.artists.map(function(a){return '<button class="btn danger sm" type="button" data-cf="'+a.id+'">'+esc(a.name)+'</button>'}).join('')+'</div></section>';
   if (admin) h += '<section class="stack"><div class="label">Staff accounts</div><div id="userAdminList" class="panel"><div class="empty">Loading accounts…</div></div></section>';
   h += '<section class="stack"><div class="label">Version</div><div class="empty" style="color:var(--muted)">App v'+APP_VERSION+' · built '+esc(APP_BUILT)+(W.server?'<br>Website v'+esc(W.server.version)+' · built '+esc(W.server.builtAt):LIVE?'':'<br>Preview with sample data')+'</div></section>';
+  if (LIVE && W.user && W.user.id==='mor') h += '<button class="btn ghost full" type="button" id="changeMyPasscode">Change my passcode</button>';
   if (LIVE) h += '<button class="btn ghost full" type="button" id="signOut">Sign out of this device</button>';
   showSheet(h,{type:'settings'});
   var root=$('sheetIn');
@@ -1535,6 +1536,7 @@ function openSettings(){
     if(!b.classList.contains('armed')){ b.classList.add('armed'); b.textContent='Tap again: close all '+aName(b.dataset.cf); return; }
     b.disabled=true; call('closeAllFuture',{artist:b.dataset.cf, requestId:rid()}).then(function(r){ toast(r.windows.length?'Closed '+r.windows.length+' window'+(r.windows.length>1?'s':'')+'. Check “Needs you” for Fresha steps.':'Nothing was open'); load(); closeSheet(); });
   }; });
+  var change=$('changeMyPasscode'); if(change) change.onclick=function(){ showChangePasscode(W.user); };
   var so=$('signOut'); if(so) so.onclick=function(){ store('token',null); store('user',null); location.reload(); };
   call('getSettings').then(function(r){
     var st=r.settings; var box=$('notifBox'); if(!box) return;
@@ -1590,7 +1592,8 @@ function showLogin(){
 }
 function showChangePasscode(user){
   closeSheet();
-  $('app').innerHTML='<form class="login" id="changePassForm"><div class="brand">MOR INK</div><div class="rule"></div><div class="sub">Change your temporary passcode</div><p class="empty">Welcome, '+esc(user.name)+'. Choose a private passcode of at least 12 characters.</p><label for="newPass">New passcode</label><input id="newPass" type="password" autocomplete="new-password" minlength="12" required><label for="confirmPass">Confirm passcode</label><input id="confirmPass" type="password" autocomplete="new-password" minlength="12" required><button class="btn gold full" type="submit">Save passcode</button><div class="empty" id="changePassMsg"></div></form>';
+  var minimum = user.id==='mor' && user.mustChangePasscode ? 6 : 12;
+  $('app').innerHTML='<form class="login" id="changePassForm"><div class="brand">MOR INK</div><div class="rule"></div><div class="sub">'+(user.mustChangePasscode?'Change your temporary passcode':'Change your passcode')+'</div><p class="empty">Welcome, '+esc(user.name)+'. Choose a private passcode of at least '+minimum+' characters.</p><label for="newPass">New passcode</label><input id="newPass" type="password" autocomplete="new-password" minlength="'+minimum+'" required><label for="confirmPass">Confirm passcode</label><input id="confirmPass" type="password" autocomplete="new-password" minlength="'+minimum+'" required><button class="btn gold full" type="submit">Save passcode</button><div class="empty" id="changePassMsg"></div></form>';
   $('changePassForm').onsubmit=function(e){ e.preventDefault(); var p=$('newPass').value; if(p!==$('confirmPass').value){ $('changePassMsg').textContent='The passcodes do not match.'; return; } api('changePasscode',{newPasscode:p}).then(function(){ toast('Passcode changed'); load(); }).catch(function(err){ $('changePassMsg').textContent=err.message||'Couldn’t change passcode.'; }); };
 }
 function showBootstrapCodes(codes,done){
@@ -1605,7 +1608,7 @@ var tt; function toast(t){ var el=$('toast'); el.textContent=t; el.classList.add
 if (LIVE) { try { localStorage.removeItem('mi:lastWeek'); } catch(e){} }
 if (LIVE && !store('token')) showLogin(); else load();
 function refreshWeek(){
-  if(!document.hidden && S.week && (!S.sheet || S.sheet.type==='window')) load();
+  if(!document.hidden && S.week && !$('changePassForm') && (!S.sheet || S.sheet.type==='window')) load();
 }
 setInterval(refreshWeek, 60000);
 document.addEventListener('visibilitychange', refreshWeek);
