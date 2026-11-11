@@ -1608,7 +1608,7 @@ var tt; function toast(t){ var el=$('toast'); el.textContent=t; el.classList.add
 if (LIVE) { try { localStorage.removeItem('mi:lastWeek'); } catch(e){} }
 if (LIVE && !store('token')) showLogin(); else load();
 function refreshWeek(){
-  if(!document.hidden && S.week && (!S.sheet || S.sheet.type==='window')) load();
+  if(!document.hidden && S.week && !$('changePassForm') && (!S.sheet || S.sheet.type==='window')) load();
 }
 setInterval(refreshWeek, 60000);
 document.addEventListener('visibilitychange', refreshWeek);
