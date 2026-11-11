@@ -1134,7 +1134,7 @@ if (LIVE) {
   api = function(action, payload){
     var tok = store('token');
     return fetch(API, { method:'POST', headers:{'Content-Type':'application/json','Authorization': tok ? 'Bearer '+tok : ''}, body: JSON.stringify(Object.assign({action:action}, payload||{})) })
-      .then(function(r){ return r.json().catch(function(){return {}}).then(function(b){ if(r.status===401 && action!=='login'){ store('token',null); showLogin(); throw new Error('signin'); } if(!r.ok) throw Object.assign(new Error(b.error||('Error '+r.status)),{status:r.status}); return b; }); });
+      .then(function(r){ return r.json().catch(function(){return {}}).then(function(b){ if(r.status===401 && action!=='login'){ store('token',null); store('user',null); S.week=null; showLogin(); throw new Error('signin'); } if(r.status===403 && b.changeRequired){ S.week=null; showChangePasscode(store('user')||{name:'your account'}); throw new Error('signin'); } if(!r.ok) throw Object.assign(new Error(b.error||('Error '+r.status)),{status:r.status}); return b; }); });
   };
 } else api = makePreviewBackend();
 
@@ -1192,8 +1192,8 @@ function call(action, payload){
   });
 }
 function load(){
-  return call('week', {}).then(function(w){ S.week=w; S.loadedAt=new Date(); if(LIVE) store('lastWeek',{w:w,at:S.loadedAt}); if(!S.date || S.date<w.today || !dayOf(S.date)) S.date=w.today; if(!artistOf(S.artist)) S.artist=w.artists[0].id; render(); if(S.sheet && S.sheet.type==='window') openWindowSheet(S.sheet.id, true); })
-    .catch(function(){ if(!S.week){ var c=store('lastWeek'); if(c){ S.week=c.w; S.loadedAt=new Date(c.at); S.date=c.w.today; } render(); } });
+  return call('week', {}).then(function(w){ S.week=w; S.loadedAt=new Date(); if(LIVE) store('user',w.user); if(!S.date || S.date<w.today || !dayOf(S.date)) S.date=w.today; if(!artistOf(S.artist)) S.artist=w.artists[0].id; render(); if(S.sheet && S.sheet.type==='window') openWindowSheet(S.sheet.id, true); })
+    .catch(function(err){ if(!S.week && err.message!=='signin' && LIVE){ showLogin(); $('loginMsg').textContent='Could not load your schedule. Try signing in again.'; } });
 }
 function artistOf(id){ return (S.week.artists||[]).find(function(a){return a.id===id}); }
 function aName(id){ var a=artistOf(id); return a ? a.name : id; }
@@ -1502,7 +1502,9 @@ function copy(t){
 /* ---- connections & settings ---- */
 function openSettings(){
   var W=S.week, I=W.integrations;
-  var h=head('CONNECTIONS');
+  var admin=!!(W.user && (W.user.role==='owner'||W.user.role==='admin'));
+  var h=head(admin?'CONNECTIONS':'MY SETTINGS');
+  if (admin) {
   h += '<section class="stack"><div class="label">Status</div><div class="panel" style="padding:4px 14px">';
   h += connRow('site','Website (Wix)', LIVE?'ok':'', LIVE?'Running v'+esc(W.server?W.server.version:APP_VERSION)+(I.lastSweep?' · last automatic check '+clockTime(I.lastSweep.at):''):'Not installed yet. This is the preview.', null);
   h += connRow('google','Google Business Profile', I.google.ready?'ok':'work', I.google.ready?(I.google.preview?'Simulated in the preview':'Automatic posts available'):esc(I.google.reason||'Copy and paste for now'), 'google');
@@ -1510,12 +1512,15 @@ function openSettings(){
   h += connRow('alert','Booking alerts (ntfy)', '', 'Send a test to the phone', 'alert', 'mor');
   h += '</div></section>';
   h += '<section class="stack"><div class="label">Artists</div>'+W.artists.map(artistForm).join('')+'</section>';
+  }
   h += '<section class="stack" id="notifBox"><div class="label">Booking alerts</div><div class="empty">Loading…</div></section>';
   h += '<section class="stack"><div class="label">Close all future availability</div><div class="empty">Stops every open and upcoming window for that artist. Booked clients keep their appointments.</div><div class="row">'+W.artists.map(function(a){return '<button class="btn danger sm" type="button" data-cf="'+a.id+'">'+esc(a.name)+'</button>'}).join('')+'</div></section>';
+  if (admin) h += '<section class="stack"><div class="label">Staff accounts</div><div id="userAdminList" class="panel"><div class="empty">Loading accounts…</div></div></section>';
   h += '<section class="stack"><div class="label">Version</div><div class="empty" style="color:var(--muted)">App v'+APP_VERSION+' · built '+esc(APP_BUILT)+(W.server?'<br>Website v'+esc(W.server.version)+' · built '+esc(W.server.builtAt):LIVE?'':'<br>Preview with sample data')+'</div></section>';
   if (LIVE) h += '<button class="btn ghost full" type="button" id="signOut">Sign out of this device</button>';
   showSheet(h,{type:'settings'});
   var root=$('sheetIn');
+  if (admin) loadUserAdmin(root);
   each(root,'[data-test]',function(b){ b.onclick=function(){
     var out=$('t-'+b.dataset.key); b.disabled=true; out.textContent='Testing…';
     call('testConnection',{what:b.dataset.test, artist:b.dataset.artist}).then(function(r){ out.textContent=r.text; var dot=$('d-'+b.dataset.key); if(dot) dot.className=r.ok?'ok':'bad'; b.disabled=false; }).catch(function(){ out.textContent='Couldn’t run the test.'; b.disabled=false; });
@@ -1530,7 +1535,7 @@ function openSettings(){
     if(!b.classList.contains('armed')){ b.classList.add('armed'); b.textContent='Tap again: close all '+aName(b.dataset.cf); return; }
     b.disabled=true; call('closeAllFuture',{artist:b.dataset.cf, requestId:rid()}).then(function(r){ toast(r.windows.length?'Closed '+r.windows.length+' window'+(r.windows.length>1?'s':'')+'. Check “Needs you” for Fresha steps.':'Nothing was open'); load(); closeSheet(); });
   }; });
-  var so=$('signOut'); if(so) so.onclick=function(){ store('token',null); location.reload(); };
+  var so=$('signOut'); if(so) so.onclick=function(){ store('token',null); store('user',null); location.reload(); };
   call('getSettings').then(function(r){
     var st=r.settings; var box=$('notifBox'); if(!box) return;
     var hh='<div class="label">Booking alerts</div>';
@@ -1540,10 +1545,25 @@ function openSettings(){
       if(a.offers.indexOf('consult')>=0) hh += tog(a.id+'.consult',a.name+': consultations','',st[a.id].consult);
       hh += tog(a.id+'.tattoo',a.name+': tattoo bookings','',st[a.id].tattoo);
     });
-    hh += tog('showNames','Show client names in alerts','Off by default. Alerts pass through ntfy’s free public server.',st.showNames)+tog('muted','Pause all alerts','',st.muted)+'<div class="empty">Opening availability never sends an alert. Only a real booking does.</div>';
+    if(W.user && (W.user.role==='owner'||W.user.role==='admin')) hh += tog('showNames','Show client names in alerts','Off by default. Alerts pass through ntfy’s free public server.',st.showNames)+tog('muted','Pause all alerts','',st.muted);
+    hh += '<div class="empty">Opening availability never sends an alert. Only a real booking does.</div>';
     box.innerHTML=hh;
     each(box,'[data-tog]',function(b){ b.onclick=function(){ var k=b.dataset.tog.split('.'); if(k.length===1) st[k[0]]=!st[k[0]]; else st[k[0]][k[1]]=!st[k[0]][k[1]]; b.setAttribute('aria-checked', k.length===1?st[k[0]]:st[k[0]][k[1]]); call('saveSettings',{settings:st}).then(function(){ toast('Saved'); }); }; });
   }).catch(function(){});
+}
+function loadUserAdmin(root){
+  var W=S.week;
+  var box=root.querySelector('#userAdminList'); if(!box) return;
+  call('listUsers').then(function(r){
+    box.innerHTML=(r.users||[]).map(function(u){
+      var status=u.active?'Active':'Restricted'; if(u.mustChangePasscode) status+=' · first sign-in pending';
+      var canManage=W.user.role==='owner' ? (u.id!=='mor') : (u.role==='staff');
+      var buttons=canManage && u.id!==W.user.id ? '<div class="row"><button class="btn sm" type="button" data-reset-user="'+esc(u.id)+'">Reset passcode</button><button class="btn sm '+(u.active?'danger':'gold')+'" type="button" data-toggle-user="'+esc(u.id)+'" data-active="'+(!u.active)+'">'+(u.active?'Restrict':'Restore')+'</button></div>' : '';
+      return '<div class="conn"><div><b>'+esc(u.name)+' · '+esc(u.role)+'</b><small>'+(u.artist?esc(u.artist)+' · ':'')+status+'</small></div>'+buttons+'</div>';
+    }).join('')||'<div class="empty">No accounts found.</div>';
+    each(box,'[data-reset-user]',function(b){b.onclick=function(){if(!confirm('Reset this account’s passcode? The person must change it at next sign-in.'))return;b.disabled=true;call('resetUserPasscode',{userId:b.dataset.resetUser}).then(function(x){window.prompt('Temporary passcode for '+x.user.name+'. Copy and send it privately; it is shown once.',x.temporaryPasscode);loadUserAdmin(root);}).catch(function(e){toast(e.message||'Could not reset passcode');b.disabled=false;});};});
+    each(box,'[data-toggle-user]',function(b){b.onclick=function(){var active=b.dataset.active==='true';if(!confirm((active?'Restore':'Restrict')+' this account?'))return;b.disabled=true;call('setUserActive',{userId:b.dataset.toggleUser,active:active}).then(function(){toast(active?'Account restored':'Account restricted');loadUserAdmin(root);}).catch(function(e){toast(e.message||'Could not update account');b.disabled=false;});};});
+  }).catch(function(){box.innerHTML='<div class="empty">Could not load accounts.</div>';});
 }
 function connRow(key, title, state, text, test, artist){
   return '<div class="conn"><div><b><i id="d-'+key+'" class="'+state+'"></i>'+esc(title)+'</b><small id="t-'+key+'">'+text+'</small></div>'+(test?'<button class="btn sm" type="button" data-test="'+test+'" data-key="'+key+'"'+(artist?' data-artist="'+artist+'"':'')+'>Test</button>':'')+'</div>';
@@ -1565,15 +1585,31 @@ function artistForm(a){
 /* ---- login (live only) ---- */
 function showLogin(){
   closeSheet();
-  $('app').innerHTML='<form class="login" id="loginForm"><div class="brand">MOR INK</div><div class="rule"></div><div class="sub">Availability</div><label class="sr" for="pc">Passcode</label><input id="pc" type="password" inputmode="numeric" autocomplete="current-password" placeholder="••••••"><button class="btn gold full" type="submit">Sign in</button><div class="empty" id="loginMsg">Stays signed in on this device for 90 days.</div></form>';
-  $('loginForm').onsubmit=function(e){ e.preventDefault(); api('login',{passcode:$('pc').value}).then(function(r){ store('token',r.token); load(); }).catch(function(err){ $('loginMsg').textContent=err.message||'Couldn’t sign in.'; }); };
+  $('app').innerHTML='<form class="login" id="loginForm"><div class="brand">MOR INK</div><div class="rule"></div><div class="sub">Availability</div><label for="username">Name</label><input id="username" type="text" autocomplete="username" placeholder="Your name" required><label for="pc">Passcode</label><input id="pc" type="password" autocomplete="current-password" placeholder="Passcode" required><button class="btn gold full" type="submit">Sign in</button><div class="empty" id="loginMsg">Use your own account. First-use passcodes must be changed.</div></form>';
+  $('loginForm').onsubmit=function(e){ e.preventDefault(); api('login',{username:$('username').value,passcode:$('pc').value}).then(function(r){ store('token',r.token); store('user',r.user); if(r.bootstrapCodes) showBootstrapCodes(r.bootstrapCodes,function(){if(r.changeRequired)showChangePasscode(r.user);else load();}); else if(r.changeRequired) showChangePasscode(r.user); else load(); }).catch(function(err){ $('loginMsg').textContent=err.message||'Couldn’t sign in.'; }); };
+}
+function showChangePasscode(user){
+  closeSheet();
+  $('app').innerHTML='<form class="login" id="changePassForm"><div class="brand">MOR INK</div><div class="rule"></div><div class="sub">Change your temporary passcode</div><p class="empty">Welcome, '+esc(user.name)+'. Choose a private passcode of at least 12 characters.</p><label for="newPass">New passcode</label><input id="newPass" type="password" autocomplete="new-password" minlength="12" required><label for="confirmPass">Confirm passcode</label><input id="confirmPass" type="password" autocomplete="new-password" minlength="12" required><button class="btn gold full" type="submit">Save passcode</button><div class="empty" id="changePassMsg"></div></form>';
+  $('changePassForm').onsubmit=function(e){ e.preventDefault(); var p=$('newPass').value; if(p!==$('confirmPass').value){ $('changePassMsg').textContent='The passcodes do not match.'; return; } api('changePasscode',{newPasscode:p}).then(function(){ toast('Passcode changed'); load(); }).catch(function(err){ $('changePassMsg').textContent=err.message||'Couldn’t change passcode.'; }); };
+}
+function showBootstrapCodes(codes,done){
+  closeSheet();
+  var names={mor:'Mor',tal:'Tal',alexia:'Alexia',jia:'Jia',shop_manager:'Shop Manager',jess:'Jess'};
+  var list=Object.keys(codes||{}).map(function(id){return '<div class="conn"><div><b>'+esc(names[id]||id)+'</b><small>One-time passcode; change it after first sign-in</small></div><code>'+esc(codes[id])+'</code></div>';}).join('');
+  $('app').innerHTML='<main class="login"><div class="brand">MOR INK</div><div class="rule"></div><div class="sub">First-login passcodes</div><p class="empty">Copy each code and give it privately to that person. They will be required to choose their own passcode at first sign-in. This list is shown once; an admin can reset a lost code.</p><div class="panel">'+list+'</div><button class="btn gold full" id="codesSaved">I saved the codes</button></main>';
+  $('codesSaved').onclick=function(){ if(done)done();else load(); };
 }
 var tt; function toast(t){ var el=$('toast'); el.textContent=t; el.classList.add('on'); clearTimeout(tt); tt=setTimeout(function(){ el.classList.remove('on'); }, 2800); }
 
+if (LIVE) { try { localStorage.removeItem('mi:lastWeek'); } catch(e){} }
 if (LIVE && !store('token')) showLogin(); else load();
-setInterval(function(){ if(!document.hidden && (!S.sheet || S.sheet.type==='window')) load(); }, 60000);
-document.addEventListener('visibilitychange', function(){ if(!document.hidden && !S.sheet) load(); });
-window.addEventListener('online', load);
+function refreshWeek(){
+  if(!document.hidden && S.week && (!S.sheet || S.sheet.type==='window')) load();
+}
+setInterval(refreshWeek, 60000);
+document.addEventListener('visibilitychange', refreshWeek);
+window.addEventListener('online', refreshWeek);
 if (window.MI_API && 'serviceWorker' in navigator) { try { navigator.serviceWorker.register('./sw.js').catch(function(){}); } catch(e){} }
 })();
 </script>
