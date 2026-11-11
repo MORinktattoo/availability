@@ -1590,7 +1590,8 @@ function showLogin(){
 }
 function showChangePasscode(user){
   closeSheet();
-  $('app').innerHTML='<form class="login" id="changePassForm"><div class="brand">MOR INK</div><div class="rule"></div><div class="sub">Change your temporary passcode</div><p class="empty">Welcome, '+esc(user.name)+'. Choose a private passcode of at least 12 characters.</p><label for="newPass">New passcode</label><input id="newPass" type="password" autocomplete="new-password" minlength="12" required><label for="confirmPass">Confirm passcode</label><input id="confirmPass" type="password" autocomplete="new-password" minlength="12" required><button class="btn gold full" type="submit">Save passcode</button><div class="empty" id="changePassMsg"></div></form>';
+  var minimum = user.id==='mor' && user.mustChangePasscode ? 6 : 12;
+  $('app').innerHTML='<form class="login" id="changePassForm"><div class="brand">MOR INK</div><div class="rule"></div><div class="sub">Change your temporary passcode</div><p class="empty">Welcome, '+esc(user.name)+'. Choose a private passcode of at least '+minimum+' characters.</p><label for="newPass">New passcode</label><input id="newPass" type="password" autocomplete="new-password" minlength="'+minimum+'" required><label for="confirmPass">Confirm passcode</label><input id="confirmPass" type="password" autocomplete="new-password" minlength="'+minimum+'" required><button class="btn gold full" type="submit">Save passcode</button><div class="empty" id="changePassMsg"></div></form>';
   $('changePassForm').onsubmit=function(e){ e.preventDefault(); var p=$('newPass').value; if(p!==$('confirmPass').value){ $('changePassMsg').textContent='The passcodes do not match.'; return; } api('changePasscode',{newPasscode:p}).then(function(){ toast('Passcode changed'); load(); }).catch(function(err){ $('changePassMsg').textContent=err.message||'Couldn’t change passcode.'; }); };
 }
 function showBootstrapCodes(codes,done){
