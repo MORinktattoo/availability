@@ -1082,7 +1082,7 @@ function b64url(s) { return (typeof Buffer !== 'undefined' ? Buffer.from(s).toSt
 function unb64url(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return typeof Buffer !== 'undefined' ? Buffer.from(s, 'base64').toString() : decodeURIComponent(escape(atob(s))); }
 
 </script>
-<script>var APP_VERSION='0.3.18', APP_BUILT='2026-11-10 13:54 UTC';</script>
+<script>var APP_VERSION='0.3.19', APP_BUILT='2026-11-14 04:00 UTC';</script>
 <script>
 (function(){
 'use strict';
@@ -1425,7 +1425,7 @@ function drawCheck(){
     call('open', Object.assign(input(), { requestId: rid(), acknowledgeUnverified: O.ack })).then(function(r){
       if(!r.ok){ O.preview.check=r.check; drawCheck(); return; }
       S.artist=r.window.artist; S.date=r.window.date;
-      toast(r.window.fresha.state==='not_needed'?'Open for walk-ins':'Saved. Next: Fresha.'); openWindowSheet(r.window.id, false, r.window); load();
+      toast(r.window.fresha.state==='not_needed'?'Open for walk-ins':(r.window.fresha.bot?'Saved. The Fresha worker is on it.':'Saved. Next: Fresha.')); openWindowSheet(r.window.id, false, r.window); load();
     }).catch(function(){ go.disabled=false; go.textContent='Try again'; });
   };
 }
@@ -1442,9 +1442,26 @@ function openWindowSheet(id, keep, given){
   h += step(w.protection.verified?'ok':'work', w.protection.verified?'check':'alert', 'Schedule checked', w.protection.verified?'No tattoo or other booking in this window.':'The calendar couldn’t be read. You confirmed Fresha was clear.');
   var fs=w.fresha.state, endTxt = w.end===BUSINESS.close ? 'Your Fresha shop hours end at '+hourLabel(w.end)+', so online booking should stop then.' : 'The block you set from '+hourLabel(w.end)+' should stop new bookings then.';
   var freshaBtns = '<div class="row"><a class="btn" href="'+FRESHA_CAL+'" target="_blank" rel="noopener">Open Fresha</a><button class="btn gold" type="button" data-act="confirmFresha">Done in Fresha</button></div>';
-  if (fs==='waiting') h += step('work','dot','Open it in Fresha','Fresha can’t be changed by apps, so this part is yours. About 30 seconds.','<ol>'+w.fresha.steps.map(function(s){return '<li>'+s+'</li>'}).join('')+'</ol>'+freshaBtns);
+  var B=w.fresha.bot, byWorker=w.fresha.by==='worker'||w.fresha.by==='shop computer';
+  var botStep=function(kindTxt, steps){
+    if(!B) return null;
+    var stage={claimed:'starting',reading:'reading Fresha',applying:'changing Fresha',verifying:'checking Fresha'}[B.stage]||'working';
+    var manual='<ol>'+steps.map(function(s){return '<li>'+s+'</li>'}).join('')+'</ol>'+freshaBtns;
+    var again='<div class="row"><button class="btn gold" type="button" data-act="retry">Try the worker again</button></div>';
+    if(B.state==='queued') return step('work','clock','Queued for the Fresha worker','The worker '+kindTxt+' Fresha, checks it, and only then '+(kindTxt==='opens it in'?'posts to Google':'removes the post')+'. Nothing is shown as done until Fresha is checked.','<details><summary>Do it by hand instead</summary>'+manual+'</details>');
+    if(B.state==='working') return step('work spin','spin','Fresha worker: '+stage+'…','Started '+clockTime(B.claimedAt)+'. Existing appointments are never changed.');
+    if(B.state==='conflict') return step('bad','alert','Stopped: something is in the way in Fresha',esc(B.error||'Nothing was changed')+'.',again+'<details><summary>Do it by hand</summary>'+manual+'</details>');
+    if(B.state==='failed') return step('bad','alert','The Fresha worker couldn’t do it',esc(B.error||'')+'. Use the steps below, or try again.',manual+again);
+    if(B.state==='manual') return step('work','dot','Do this one in Fresha by hand',esc(B.error||'This change isn’t automated yet')+'.',manual);
+    return null;
+  };
+  var bs = (fs==='waiting' && B && B.job && B.job.kind==='open') ? botStep('opens it in', w.fresha.steps) : (fs==='close_needed' && B && B.job && B.job.kind==='close') ? botStep('blocks the rest in', w.fresha.closeSteps) : null;
+  if (bs) h += bs;
+  else if (fs==='waiting') h += step('work','dot','Open it in Fresha','Do this part in Fresha yourself. It takes about 30 seconds.','<ol>'+w.fresha.steps.map(function(s){return '<li>'+s+'</li>'}).join('')+'</ol>'+freshaBtns);
+  else if (fs==='applied' && byWorker && w.fresha.verified) h += step('ok','check','Verified in Fresha','The worker opened it and read Fresha back at '+clockTime(w.fresha.confirmedAt)+': the window is open and every appointment is unchanged. '+endTxt);
   else if (fs==='applied') h += step('ok','check','Open in Fresha (you confirmed)','Confirmed at '+clockTime(w.fresha.confirmedAt)+'. '+endTxt+' The app can’t see Fresha to check.');
   else if (fs==='close_needed') h += step('work','dot','Block the rest in Fresha','New bookings stop once this block is in. Booked clients keep their appointments.','<ol>'+w.fresha.closeSteps.map(function(s){return '<li>'+s+'</li>'}).join('')+'</ol>'+freshaBtns);
+  else if (fs==='closed' && byWorker && w.fresha.verified) h += step('ok','check','Closed in Fresha (verified)','Read back at '+clockTime(w.fresha.closedConfirmedAt)+'. Booked clients keep their appointments.');
   else if (fs==='closed') h += step('ok','check','Closed in Fresha (you confirmed)','Confirmed at '+clockTime(w.fresha.closedConfirmedAt)+'.');
   else if (fs==='self_closed') h += step('ok','check','Should be closed in Fresha','The window ended at '+hourLabel(w.end)+'. The app can’t check Fresha, so glance at the calendar if in doubt.');
   else if (fs==='not_needed') h += step('ok','check','Nothing to do in Fresha','Walk-ins only. Add each walk-in to Fresha when they arrive.');
@@ -1456,10 +1473,10 @@ function openWindowSheet(id, keep, given){
   var manualReason=w.google.error||'Automatic posting isn’t on';
   var integration=S.week.integrations && S.week.integrations.google;
   if(integration && !integration.ready && manualReason==='Waiting for Google API approval') manualReason=integration.reason||manualReason;
-  var G = { waiting_fresha:['idle','dot','Google post','Goes up after you tap Done in Fresha, so Google never advertises times that aren’t bookable.'],
+  var G = { waiting_fresha:['idle','dot','Google post','Goes up only once Fresha is open'+(w.fresha.bot?' and checked':' (after you tap Done in Fresha)')+', so Google never advertises times that aren’t bookable.'],
     publishing:['work spin','spin','Sending to Google…',''],
     processing:['work','clock','Google is processing the post','Google accepted it but hasn’t shown it yet. The app checks again every hour and when you open it. It isn’t live until this says so.','<div class="row"><button class="btn" type="button" data-act="retry">Check now</button></div>'],
-    published:['ok','check','Live on Google','Google reported it live at '+(w.google.publishedAt?clockTime(w.google.publishedAt):'—')+'. The app removes it after '+hourLabel(w.end)+', '+CLOSE_LAG_TEXT+'.','<details><summary>Post text and photos</summary><div class="post">'+esc(w.google.text||'')+'</div>'+postPhotos(w.google.media,w.artist,false)+'</details>'],
+    published:['ok','check',w.google.lastChange==='updated'?'Live on Google · updated':'Live on Google','Google reported it live at '+(w.google.publishedAt?clockTime(w.google.publishedAt):'—')+(w.google.updatedAt?'; text updated to the hours still free at '+clockTime(w.google.updatedAt):'')+'. The app removes it after '+hourLabel(w.end)+', '+CLOSE_LAG_TEXT+'.','<details><summary>Post text and photos</summary><div class="post">'+esc(w.google.text||'')+'</div>'+postPhotos(w.google.media,w.artist,false)+'</details>'],
     failed:['bad','alert','Google post didn’t go up',esc(w.google.error||'')+'. Your Fresha window is unaffected.',manualPhotos+'<div class="row"><button class="btn gold" type="button" data-act="retry">Try again</button><button class="btn" type="button" data-act="copy">Copy text instead</button></div>'],
     manual:['work','mega','Post it on Google',esc(manualReason)+'. '+manualInstructions,'<div class="post" id="postText">'+esc(w.google.text||'')+'</div>'+manualPhotos+(integration&&integration.ready?'<div class="row"><button class="btn gold" type="button" data-act="retry">Publish through Google</button></div>':'')+'<div class="row"><button class="btn gold" type="button" data-act="copy">Copy text</button><a class="btn" href="'+GOOGLE_PROFILE+'" target="_blank" rel="noopener">Open profile</a></div><div class="row"><button class="btn ghost" type="button" data-act="posted">I posted it</button></div>'],
     manual_posted:['ok','check','Posted by hand','When the window ends, the app reminds you to delete it.'],
@@ -1489,6 +1506,7 @@ function act(what, w, b){
   b.disabled=true;
   var m = { confirmFresha:['confirmFresha',{}], retry:['retry',{}], posted:['manual',{what:'posted'}], removedByHand:['manual',{what:'removed'}] }[what];
   call(m[0], Object.assign({windowId:w.id, requestId:rid()}, m[1])).then(function(r){
+    if (r.ok===false && r.error) { toast(r.error); afterAct(r.window); return; }
     var g=r.window.google.state;
     if (what==='confirmFresha') toast(g==='published'?'Open · Google reports the post live':g==='processing'?'Open · Google is processing the post':g==='failed'?'Open · Google post failed':'Open in Fresha');
     afterAct(r.window);
@@ -1507,6 +1525,10 @@ function openSettings(){
   if (admin) {
   h += '<section class="stack"><div class="label">Status</div><div class="panel" style="padding:4px 14px">';
   h += connRow('site','Website (Wix)', LIVE?'ok':'', LIVE?'Running v'+esc(W.server?W.server.version:APP_VERSION)+(I.lastSweep?' · last automatic check '+clockTime(I.lastSweep.at):''):'Not installed yet. This is the preview.', null);
+  var FW=I.freshaWorker;
+  if (FW) { var fwAge=FW.ageMin==null?'never seen':FW.ageMin<1?'seen just now':'seen '+FW.ageMin+' min ago';
+    h += connRow('worker','Fresha worker', !FW.enabled?'':FW.online&&FW.session==='ok'?'ok':FW.online?'work':'bad',
+      (!FW.enabled?'Off (MI_FRESHA_BOT). Fresha changes use the manual steps. ':'')+(FW.lastSeen?'v'+esc(FW.version||'?')+' · '+fwAge+' · Fresha '+(FW.session==='ok'?'signed in':FW.session==='signed_out'?'SIGNED OUT, sign in on the worker':esc(FW.session||'unknown')):'No worker has checked in yet'), null); }
   h += connRow('google','Google Business Profile', I.google.ready?'ok':'work', I.google.ready?(I.google.preview?'Simulated in the preview':'Automatic posts available'):esc(I.google.reason||'Copy and paste for now'), 'google');
   W.artists.forEach(function(a){ var c=I.calendar[a.id]; h += connRow('cal-'+a.id, a.name+'’s booking calendar', c.untracked?'':c.ok?'ok':'bad', c.untracked?'Walk-ins only · no calendar needed':c.ok?'Connected · checks bookings before opening windows':'Not connected · confirm Fresha bookings by hand', c.untracked?null:'calendar', a.id); });
   h += connRow('alert','Booking alerts (ntfy)', '', 'Send a test to the phone', 'alert', 'mor');
