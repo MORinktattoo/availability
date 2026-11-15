@@ -1082,7 +1082,7 @@ function b64url(s) { return (typeof Buffer !== 'undefined' ? Buffer.from(s).toSt
 function unb64url(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return typeof Buffer !== 'undefined' ? Buffer.from(s, 'base64').toString() : decodeURIComponent(escape(atob(s))); }
 
 </script>
-<script>var APP_VERSION='0.3.18', APP_BUILT='2026-11-10 13:54 UTC';</script>
+<script>var APP_VERSION='0.3.19', APP_BUILT='2026-11-15 21:20 UTC';</script>
 <script>
 (function(){
 'use strict';
@@ -1134,9 +1134,35 @@ if (LIVE) {
   api = function(action, payload){
     var tok = store('token');
     return fetch(API, { method:'POST', headers:{'Content-Type':'application/json','Authorization': tok ? 'Bearer '+tok : ''}, body: JSON.stringify(Object.assign({action:action}, payload||{})) })
-      .then(function(r){ return r.json().catch(function(){return {}}).then(function(b){ if(r.status===401 && action!=='login'){ store('token',null); store('user',null); S.week=null; showLogin(); throw new Error('signin'); } if(r.status===403 && b.changeRequired){ S.week=null; showChangePasscode(store('user')||{name:'your account'}); throw new Error('signin'); } if(!r.ok) throw Object.assign(new Error(b.error||('Error '+r.status)),{status:r.status}); return b; }); });
+      .then(function(r){ return r.json().catch(function(){return {}}).then(function(b){ if(r.status===401 && action!=='login'){ store('token',null); store('user',null); S.week=null; signInAgain(); throw new Error('signin'); } if(r.status===403 && b.changeRequired){ S.week=null; showChangePasscode(store('user')||{name:'your account'}); throw new Error('signin'); } if(!r.ok) throw Object.assign(new Error(b.error||('Error '+r.status)),{status:r.status}); return b; }); });
   };
 } else api = makePreviewBackend();
+
+/* ---- auto sign-in (live only) ----
+   The website's sign-in pass lasts 8 hours. Instead of asking again, the phone's own password
+   manager (Chrome / Google Password Manager) hands back the saved name + passcode silently.
+   The passcode is never kept by this app. Sign out turns this off until the next manual sign-in. */
+var lastReauth=0;
+function saveCredential(id, pass, name){
+  try{ if(LIVE && window.PasswordCredential && navigator.credentials && id && pass)
+    navigator.credentials.store(new PasswordCredential({id:String(id), password:String(pass), name:String(name||id)})).catch(function(){}); }catch(e){}
+}
+function silentSignIn(){
+  try{ if(!LIVE || !window.PasswordCredential || !navigator.credentials) return Promise.resolve(false); }catch(e){ return Promise.resolve(false); }
+  return navigator.credentials.get({password:true, mediation:'silent'}).then(function(c){
+    if(!c || !c.password) return false;
+    return api('login',{username:c.id, passcode:c.password}).then(function(r){
+      if(!r || !r.token || r.changeRequired || r.bootstrapCodes) return false;
+      store('token',r.token); store('user',r.user); return true;
+    });
+  }).catch(function(){ return false; });
+}
+// One silent try per minute at most, so a bad saved passcode can never loop.
+function signInAgain(){
+  if(Date.now()-lastReauth < 60000){ showLogin(); return; }
+  lastReauth=Date.now();
+  silentSignIn().then(function(ok){ if(ok) load(); else showLogin(); });
+}
 
 function makePreviewBackend(){
   var db = { w:{}, req:{}, meta:{}, seen:{} };
@@ -1537,7 +1563,7 @@ function openSettings(){
     b.disabled=true; call('closeAllFuture',{artist:b.dataset.cf, requestId:rid()}).then(function(r){ toast(r.windows.length?'Closed '+r.windows.length+' window'+(r.windows.length>1?'s':'')+'. Check “Needs you” for Fresha steps.':'Nothing was open'); load(); closeSheet(); });
   }; });
   var change=$('changeMyPasscode'); if(change) change.onclick=function(){ showChangePasscode(W.user); };
-  var so=$('signOut'); if(so) so.onclick=function(){ store('token',null); store('user',null); location.reload(); };
+  var so=$('signOut'); if(so) so.onclick=function(){ try{ if(navigator.credentials && navigator.credentials.preventSilentAccess) navigator.credentials.preventSilentAccess(); }catch(e){} store('token',null); store('user',null); location.reload(); };
   call('getSettings').then(function(r){
     var st=r.settings; var box=$('notifBox'); if(!box) return;
     var hh='<div class="label">Booking alerts</div>';
@@ -1588,13 +1614,13 @@ function artistForm(a){
 function showLogin(){
   closeSheet();
   $('app').innerHTML='<form class="login" id="loginForm"><div class="brand">MOR INK</div><div class="rule"></div><div class="sub">Availability</div><label for="username">Name</label><input id="username" type="text" autocomplete="username" placeholder="Your name" required><label for="pc">Passcode</label><input id="pc" type="password" autocomplete="current-password" placeholder="Passcode" required><button class="btn gold full" type="submit">Sign in</button><div class="empty" id="loginMsg">Use your own account. First-use passcodes must be changed.</div></form>';
-  $('loginForm').onsubmit=function(e){ e.preventDefault(); api('login',{username:$('username').value,passcode:$('pc').value}).then(function(r){ store('token',r.token); store('user',r.user); if(r.bootstrapCodes) showBootstrapCodes(r.bootstrapCodes,function(){if(r.changeRequired)showChangePasscode(r.user);else load();}); else if(r.changeRequired) showChangePasscode(r.user); else load(); }).catch(function(err){ $('loginMsg').textContent=err.message||'Couldn’t sign in.'; }); };
+  $('loginForm').onsubmit=function(e){ e.preventDefault(); var un=$('username').value, pw=$('pc').value; api('login',{username:un,passcode:pw}).then(function(r){ store('token',r.token); store('user',r.user); if(!r.changeRequired && !r.bootstrapCodes) saveCredential(un,pw,r.user&&r.user.name); if(r.bootstrapCodes) showBootstrapCodes(r.bootstrapCodes,function(){if(r.changeRequired)showChangePasscode(r.user);else load();}); else if(r.changeRequired) showChangePasscode(r.user); else load(); }).catch(function(err){ $('loginMsg').textContent=err.message||'Couldn’t sign in.'; }); };
 }
 function showChangePasscode(user){
   closeSheet();
   var minimum = 6;
   $('app').innerHTML='<form class="login" id="changePassForm"><div class="brand">MOR INK</div><div class="rule"></div><div class="sub">'+(user.mustChangePasscode?'Change your temporary passcode':'Change your passcode')+'</div><p class="empty">Welcome, '+esc(user.name)+'. Choose a private passcode of at least '+minimum+' characters.</p><label for="newPass">New passcode</label><input id="newPass" type="password" autocomplete="new-password" minlength="'+minimum+'" required><label for="confirmPass">Confirm passcode</label><input id="confirmPass" type="password" autocomplete="new-password" minlength="'+minimum+'" required><button class="btn gold full" type="submit">Save passcode</button><div class="empty" id="changePassMsg"></div></form>';
-  $('changePassForm').onsubmit=function(e){ e.preventDefault(); var p=$('newPass').value; if(p!==$('confirmPass').value){ $('changePassMsg').textContent='The passcodes do not match.'; return; } api('changePasscode',{newPasscode:p}).then(function(){ toast('Passcode changed'); load(); }).catch(function(err){ $('changePassMsg').textContent=err.message||'Couldn’t change passcode.'; }); };
+  $('changePassForm').onsubmit=function(e){ e.preventDefault(); var p=$('newPass').value; if(p!==$('confirmPass').value){ $('changePassMsg').textContent='The passcodes do not match.'; return; } api('changePasscode',{newPasscode:p}).then(function(){ var u=store('user')||user||{}; saveCredential(u.id||u.name,p,u.name); toast('Passcode changed'); load(); }).catch(function(err){ $('changePassMsg').textContent=err.message||'Couldn’t change passcode.'; }); };
 }
 function showBootstrapCodes(codes,done){
   closeSheet();
@@ -1606,7 +1632,7 @@ function showBootstrapCodes(codes,done){
 var tt; function toast(t){ var el=$('toast'); el.textContent=t; el.classList.add('on'); clearTimeout(tt); tt=setTimeout(function(){ el.classList.remove('on'); }, 2800); }
 
 if (LIVE) { try { localStorage.removeItem('mi:lastWeek'); } catch(e){} }
-if (LIVE && !store('token')) showLogin(); else load();
+if (LIVE && !store('token')) signInAgain(); else load();
 function refreshWeek(){
   if(!document.hidden && S.week && !$('changePassForm') && (!S.sheet || S.sheet.type==='window')) load();
 }
