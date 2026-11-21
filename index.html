@@ -1082,7 +1082,8 @@ function b64url(s) { return (typeof Buffer !== 'undefined' ? Buffer.from(s).toSt
 function unb64url(s) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return typeof Buffer !== 'undefined' ? Buffer.from(s, 'base64').toString() : decodeURIComponent(escape(atob(s))); }
 
 </script>
-<script>var APP_VERSION='0.3.19', APP_BUILT='2026-11-15 21:20 UTC';</script>
+<script>var APP_VERSION='0.3.19', APP_BUILT='2026-11-21 02:45 UTC';
+function verCmp(a,b){a=String(a||'').split('.');b=String(b||'').split('.');for(var i=0;i<3;i++){var x=+a[i]||0,y=+b[i]||0;if(x!==y)return x>y?1:-1;}return 0;}</script>
 <script>
 (function(){
 'use strict';
@@ -1249,7 +1250,12 @@ function render(){
   var b = '';
   if (!LIVE) b += '<div class="banner"><b>Preview with sample bookings.</b> Try anything. Nothing reaches Fresha or Google, and it resets when you reload.</div>';
   if (S.offline) b += '<div class="banner warn"><b>No connection.</b> Showing what loaded at '+esc(S.loadedAt?S.loadedAt.toLocaleTimeString('en-CA',{hour:'numeric',minute:'2-digit'}):'—')+'. Changes need a connection.</div>';
-  if (W.server && W.server.version !== APP_VERSION) b += '<div class="banner warn">Version '+esc(W.server.version)+' is on the website; this screen is '+APP_VERSION+'. <button class="btn sm" type="button" id="reloadBtn">Reload</button></div>';
+  if (W.server && W.server.version !== APP_VERSION) {
+    // Reload only helps when the website is newer than this screen. When the screen is ahead,
+    // the website update hasn't been published yet and there's nothing to do on the phone.
+    if (verCmp(W.server.version, APP_VERSION) > 0) b += '<div class="banner warn">A newer version ('+esc(W.server.version)+') is on the website; this screen is '+APP_VERSION+'. <button class="btn sm" type="button" id="reloadBtn">Reload</button></div>';
+    else b += '<div class="banner">Website update pending (website '+esc(W.server.version)+', screen '+APP_VERSION+'). Nothing to do on your phone. Everything keeps working.</div>';
+  }
   if (b) h += '<div class="banners stack">'+b+'</div>';
 
   // left column: pills, date, switch
